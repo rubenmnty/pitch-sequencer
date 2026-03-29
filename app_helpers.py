@@ -17,6 +17,21 @@ def reset_at_bat():
     st.session_state.last_outcome_text = ""
 
 
+def advance_half_inning_if_needed():
+    if st.session_state.outs >= 3:
+        st.session_state.outs = 0
+        if st.session_state.half_inning == "Top":
+            st.session_state.half_inning = "Bottom"
+        else:
+            st.session_state.half_inning = "Top"
+            st.session_state.inning += 1
+
+
+def add_out():
+    st.session_state.outs += 1
+    advance_half_inning_if_needed()
+
+
 def next_batter():
     if st.session_state.lineup:
         st.session_state.current_batter_index = (
@@ -56,21 +71,25 @@ def record_pitch_line(pitch, location, outcome):
     st.session_state.ab_history.append(f"{pitch} | {location} | {outcome}")
 
 
-def end_at_bat(reason_text):
+def end_at_bat(reason_text, add_out_on_end=False):
     batter = current_batter()
     if batter:
         st.session_state.game_log.append(
             f"{batter['name']} ({batter['hand']}) - {reason_text}"
         )
+
+    if add_out_on_end:
+        add_out()
+
     st.session_state.last_outcome_text = reason_text
     st.session_state.stage = "at_bat_end"
 
 
 def auto_check_count_end():
     if st.session_state.balls >= 4:
-        end_at_bat("Walk")
+        end_at_bat("Walk", add_out_on_end=False)
         return True
     if st.session_state.strikes >= 3:
-        end_at_bat("Strikeout")
+        end_at_bat("Strikeout", add_out_on_end=True)
         return True
     return False
