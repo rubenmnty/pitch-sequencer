@@ -69,9 +69,12 @@ DEFAULT_SESSION_STATE = {
     "current_batter_index": 0,
     "balls": 0,
     "strikes": 0,
+    "outs": 0,
+    "inning": 1,
+    "half_inning": "Top",
     "ab_history": [],
     "game_log": [],
-    "stage": "result",          # result, swing_details, in_play, at_bat_end
+    "stage": "result",
     "pending_result": None,
     "pending_pitch": None,
     "last_outcome_text": "",
