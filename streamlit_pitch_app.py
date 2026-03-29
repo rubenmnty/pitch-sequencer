@@ -141,6 +141,9 @@ elif st.session_state.page == "lineup":
     if st.button("Start Pitch Sequencer", use_container_width=True):
         st.session_state.lineup = lineup
         st.session_state.current_batter_index = 0
+        st.session_state.outs = 0
+        st.session_state.inning = 1
+        st.session_state.half_inning = "Top"
         reset_at_bat()
         st.session_state.page = "game"
         st.rerun()
@@ -157,12 +160,23 @@ elif st.session_state.page == "game":
             st.session_state.page = "welcome"
             st.rerun()
     else:
+        lineup_size = len(st.session_state.lineup)
+        batter_number = st.session_state.current_batter_index + 1
+
         st.title("At-Bat")
         st.write(
             f"{st.session_state.sport} | Pitcher: {st.session_state.pitcher_name} "
             f"({st.session_state.pitcher_hand})"
         )
         st.write(f"Pitch Mix: {', '.join(st.session_state.pitcher_pitches)}")
+
+        info1, info2, info3 = st.columns(3)
+        with info1:
+            st.metric("Inning", f"{st.session_state.half_inning} {st.session_state.inning}")
+        with info2:
+            st.metric("Outs", st.session_state.outs)
+        with info3:
+            st.metric("Batter", f"{batter_number} of {lineup_size}")
 
         st.subheader(f"{batter['name']}")
         st.write(f"Handedness: {batter['hand']}")
@@ -241,7 +255,7 @@ elif st.session_state.page == "game":
                 pitch = st.session_state.pending_pitch["pitch"]
                 location = st.session_state.pending_pitch["location"]
                 record_pitch_line(pitch, location, "HBP")
-                end_at_bat("Hit By Pitch")
+                end_at_bat("Hit By Pitch", add_out_on_end=False)
                 st.rerun()
 
         elif st.session_state.stage == "swing_details":
@@ -280,7 +294,8 @@ elif st.session_state.page == "game":
             if st.button("Submit Play", use_container_width=True):
                 play_text = f"{contact_type} to {direction} | {play_result}"
                 st.session_state.ab_history.append(play_text)
-                end_at_bat(play_text)
+                add_out_on_end = play_result == "Out"
+                end_at_bat(play_text, add_out_on_end=add_out_on_end)
                 st.rerun()
 
         elif st.session_state.stage == "at_bat_end":
