@@ -255,7 +255,7 @@ elif st.session_state.page == "game":
                 pitch = st.session_state.pending_pitch["pitch"]
                 location = st.session_state.pending_pitch["location"]
                 record_pitch_line(pitch, location, "HBP")
-                end_at_bat("Hit By Pitch", add_out_on_end=False)
+                end_at_bat("Hit By Pitch", False)
                 st.rerun()
 
         elif st.session_state.stage == "swing_details":
@@ -295,11 +295,13 @@ elif st.session_state.page == "game":
                 play_text = f"{contact_type} to {direction} | {play_result}"
                 st.session_state.ab_history.append(play_text)
                 add_out_on_end = play_result == "Out"
-                end_at_bat(play_text, add_out_on_end=add_out_on_end)
+                end_at_bat(play_text, add_out_on_end)
                 st.rerun()
 
         elif st.session_state.stage == "at_bat_end":
             st.success(f"At-Bat Over: {st.session_state.last_outcome_text}")
+            st.write(f"Inning: {st.session_state.half_inning} {st.session_state.inning}")
+            st.write(f"Outs: {st.session_state.outs}")
             if st.button("Next Batter", use_container_width=True):
                 next_batter()
                 st.rerun()
