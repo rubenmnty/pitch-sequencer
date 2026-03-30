@@ -263,23 +263,24 @@ elif st.session_state.page == "game":
         st.write(f"Handedness: {batter['hand']}")
         st.write(f"Count: {st.session_state.balls}-{st.session_state.strikes}")
 
-        if st.session_state.stage != "at_bat_end":
-            pitch, location, reason = recommend_pitch(
-                batter,
-                st.session_state.balls,
-                st.session_state.strikes,
-                st.session_state.ab_history,
-            )
-            st.session_state.pending_pitch = {
-                "pitch": pitch,
-                "location": location,
-                "reason": reason,
-            }
+        if st.session_state.stage == "result":
+    pitch, location, reason = recommend_pitch(
+        batter,
+        st.session_state.balls,
+        st.session_state.strikes,
+        st.session_state.ab_history,
+    )
+    st.session_state.pending_pitch = {
+        "pitch": pitch,
+        "location": location,
+        "reason": reason,
+    }
 
-            st.markdown("### Pitch Call")
-            st.write(f"**Pitch:** {pitch}")
-            st.write(f"**Location:** {location}")
-            st.write(f"**Why:** {reason}")
+if st.session_state.pending_pitch is not None and st.session_state.stage != "at_bat_end":
+    st.markdown("### Pitch Call")
+    st.write(f"**Pitch:** {st.session_state.pending_pitch['pitch']}")
+    st.write(f"**Location:** {st.session_state.pending_pitch['location']}")
+    st.write(f"**Why:** {st.session_state.pending_pitch['reason']}")
 
         if st.session_state.stage == "result":
             st.markdown("### Result")
