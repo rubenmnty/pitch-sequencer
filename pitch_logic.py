@@ -5,12 +5,35 @@ def pitch_available(name: str) -> bool:
     return name in st.session_state.pitcher_pitches
 
 
-def first_available(candidates):
-    for pitch_name in candidates:
-        if pitch_available(pitch_name):
-            return pitch_name
+def get_pitch_confidence_score(name: str) -> int:
+    profile = st.session_state.pitch_profiles.get(name, {})
+    return int(profile.get("confidence_score", 50))
+
+
+def get_pitch_rank(name: str) -> int:
+    profile = st.session_state.pitch_profiles.get(name, {})
+    return int(profile.get("rank", 99))
+
+
+def sort_candidates(candidates):
+    available = [p for p in candidates if pitch_available(p)]
+    if not available:
+        return []
+    return sorted(
+        available,
+        key=lambda p: (-get_pitch_confidence_score(p), get_pitch_rank(p), p)
+    )
+
+
+def best_available(candidates):
+    ordered = sort_candidates(candidates)
+    if ordered:
+        return ordered[0]
     if st.session_state.pitcher_pitches:
-        return st.session_state.pitcher_pitches[0]
+        return sorted(
+            st.session_state.pitcher_pitches,
+            key=lambda p: (-get_pitch_confidence_score(p), get_pitch_rank(p), p)
+        )[0]
     return None
 
 
@@ -50,6 +73,10 @@ def softball_location_for_pitch(pitch_name: str, batter_hand: str):
     return "middle"
 
 
+def confidence_note(pitch_name: str):
+    return f" Confidence: {get_pitch_confidence_score(pitch_name)}."
+
+
 def baseball_recommend_pitch(batter, balls, strikes, history):
     handedness = batter["hand"]
     tendencies = batter["tendencies"]
@@ -58,115 +85,108 @@ def baseball_recommend_pitch(batter, balls, strikes, history):
 
     if balls == 0 and strikes == 0 and len(history) == 0:
         if use_default and slot_num == 1:
-            pitch_name = first_available(["cutter", "2-seam", "4-seam"])
+            pitch_name = best_available(["cutter", "2-seam", "4-seam"])
             return (
                 pitch_name,
                 baseball_location_for_pitch(pitch_name, handedness),
-                "Top of lineup default: get ahead with a safe strike.",
+                "Top of lineup default: get ahead with a safe strike." + confidence_note(pitch_name),
             )
-        if use_default and slot_num == 4:
-            if "Fastball hunter" in tendencies:
-                pitch_name = first_available(
-                    ["slider", "sweeper", "curveball", "changeup"]
-                )
-                return (
-                    pitch_name,
-                    baseball_location_for_pitch(pitch_name, handedness),
-                    "Cleanup hitter: do not give a clean first fastball.",
-                )
+        if use_default and slot_num == 4 and "Fastball hunter" in tendencies:
+            pitch_name = best_available(["slider", "sweeper", "curveball", "changeup"])
+            return (
+                pitch_name,
+                baseball_location_for_pitch(pitch_name, handedness),
+                "Cleanup hitter: do not give a clean first fastball." + confidence_note(pitch_name),
+            )
         if "Aggressive first pitch" in tendencies and "Fastball hunter" in tendencies:
-            pitch_name = first_available(["slider", "sweeper", "curveball"])
+            pitch_name = best_available(["slider", "sweeper", "curveball"])
             return (
                 pitch_name,
                 baseball_location_for_pitch(pitch_name, handedness),
-                "Aggressive fastball hunter: start with spin.",
+                "Aggressive fastball hunter: start with spin." + confidence_note(pitch_name),
             )
-        pitch_name = first_available(["4-seam", "2-seam", "cutter"])
+        pitch_name = best_available(["4-seam", "2-seam", "cutter"])
         return (
             pitch_name,
             baseball_location_for_pitch(pitch_name, handedness),
-            "Default baseball first pitch.",
+            "Default baseball first pitch." + confidence_note(pitch_name),
         )
 
     if strikes == 2:
         if "Chases high fastball" in tendencies:
-            pitch_name = first_available(["4-seam"])
+            pitch_name = best_available(["4-seam"])
             if pitch_name:
-                return pitch_name, "up out of zone", "Two strikes: hitter chases up."
+                return pitch_name, "up out of zone", "Two strikes: hitter chases up." + confidence_note(pitch_name)
         if "Chases splitter down" in tendencies:
-            pitch_name = first_available(["splitter", "changeup", "curveball"])
+            pitch_name = best_available(["splitter", "changeup", "curveball"])
             if pitch_name:
-                return pitch_name, "down out of zone", "Two strikes: hitter chases down."
+                return pitch_name, "down out of zone", "Two strikes: hitter chases down." + confidence_note(pitch_name)
         if "Chases sweeper away" in tendencies:
-            pitch_name = first_available(["sweeper", "slider"])
+            pitch_name = best_available(["sweeper", "slider"])
             if pitch_name:
                 return (
                     pitch_name,
                     baseball_location_for_pitch(pitch_name, handedness),
-                    "Two strikes: hitter chases away.",
+                    "Two strikes: hitter chases away." + confidence_note(pitch_name),
                 )
-        pitch_name = first_available(
-            ["slider", "sweeper", "splitter", "curveball", "changeup"]
-        )
+        pitch_name = best_available(["slider", "sweeper", "splitter", "curveball", "changeup"])
         return (
             pitch_name,
             baseball_location_for_pitch(pitch_name, handedness),
-            "Two-strike chase pitch.",
+            "Two-strike chase pitch." + confidence_note(pitch_name),
         )
 
     if balls > strikes:
-        pitch_name = first_available(["cutter", "2-seam", "4-seam"])
+        pitch_name = best_available(["cutter", "2-seam", "4-seam"])
         return (
             pitch_name,
             baseball_location_for_pitch(pitch_name, handedness),
-            "Hitter count: safer competitive strike.",
+            "Hitter count: safer competitive strike." + confidence_note(pitch_name),
         )
 
     last = history[-1].lower() if history else ""
 
     if "4-seam" in last and "up" in last:
-        pitch_name = first_available(["splitter", "changeup", "curveball"])
+        pitch_name = best_available(["splitter", "changeup", "curveball"])
         return (
             pitch_name,
-            "down out of zone"
-            if pitch_name in ["splitter", "changeup"]
-            else baseball_location_for_pitch(pitch_name, handedness),
-            "Tunnel off elevated fastball.",
+            "down out of zone" if pitch_name in ["splitter", "changeup"] else baseball_location_for_pitch(pitch_name, handedness),
+            "Tunnel off elevated fastball." + confidence_note(pitch_name),
         )
     if "2-seam" in last or "cutter" in last:
-        pitch_name = first_available(["slider", "sweeper", "curveball", "splitter"])
+        pitch_name = best_available(["slider", "sweeper", "curveball", "splitter"])
         return (
             pitch_name,
             baseball_location_for_pitch(pitch_name, handedness),
-            "Move off previous hard pitch.",
+            "Move off previous hard pitch." + confidence_note(pitch_name),
         )
     if "slider" in last or "sweeper" in last:
-        pitch_name = first_available(["4-seam", "2-seam", "cutter"])
+        pitch_name = best_available(["4-seam", "2-seam", "cutter"])
         return (
             pitch_name,
             baseball_location_for_pitch(pitch_name, handedness),
-            "Change lane after breaking ball.",
+            "Change lane after breaking ball." + confidence_note(pitch_name),
         )
     if "splitter" in last or "changeup" in last:
-        pitch_name = first_available(["4-seam", "cutter"])
+        pitch_name = best_available(["4-seam", "cutter"])
         return (
             pitch_name,
             baseball_location_for_pitch(pitch_name, handedness),
-            "Climb after soft/down pitch.",
+            "Climb after soft/down pitch." + confidence_note(pitch_name),
         )
     if "curveball" in last:
-        pitch_name = first_available(["4-seam", "cutter", "changeup"])
+        pitch_name = best_available(["4-seam", "cutter", "changeup"])
         return (
             pitch_name,
             baseball_location_for_pitch(pitch_name, handedness),
-            "Different speed/shape after curve.",
+            "Different speed/shape after curve." + confidence_note(pitch_name),
         )
 
-    pitch_name = first_available(["4-seam", "2-seam", "cutter"])
+    pitch_name = best_available(["4-seam", "2-seam", "cutter"])
     return (
         pitch_name,
         baseball_location_for_pitch(pitch_name, handedness),
-        "Default baseball sequence.",
+        "Default baseball sequence." + confidence_note(pitch_name),
     )
 
 
@@ -178,117 +198,115 @@ def softball_recommend_pitch(batter, balls, strikes, history):
 
     if balls == 0 and strikes == 0 and len(history) == 0:
         if use_default and slot_num == 1:
-            pitch_name = first_available(["curve", "screw", "drop"])
+            pitch_name = best_available(["curve", "screw", "drop"])
             return (
                 pitch_name,
                 softball_location_for_pitch(pitch_name, handedness),
-                "Top of lineup default: steal a strike with movement.",
+                "Top of lineup default: steal a strike with movement." + confidence_note(pitch_name),
             )
         if use_default and slot_num == 4:
-            pitch_name = first_available(["curve", "screw", "drop curve", "change"])
+            pitch_name = best_available(["curve", "screw", "drop curve", "change"])
             return (
                 pitch_name,
                 softball_location_for_pitch(pitch_name, handedness),
-                "Middle of lineup default: avoid giving a clean first look.",
+                "Middle of lineup default: avoid giving a clean first look." + confidence_note(pitch_name),
             )
         if "Aggressive first pitch" in tendencies and "Fastball hunter" in tendencies:
-            pitch_name = first_available(["curve", "screw", "drop curve", "change"])
+            pitch_name = best_available(["curve", "screw", "drop curve", "change"])
             return (
                 pitch_name,
                 softball_location_for_pitch(pitch_name, handedness),
-                "Aggressive hitter: start with movement.",
+                "Aggressive hitter: start with movement." + confidence_note(pitch_name),
             )
-        pitch_name = first_available(["rise", "drop", "curve", "screw"])
+        pitch_name = best_available(["rise", "drop", "curve", "screw"])
         return (
             pitch_name,
             softball_location_for_pitch(pitch_name, handedness),
-            "Default softball first pitch.",
+            "Default softball first pitch." + confidence_note(pitch_name),
         )
 
     if strikes == 2:
         if "Chases high fastball" in tendencies:
-            pitch_name = first_available(["rise"])
+            pitch_name = best_available(["rise"])
             if pitch_name:
-                return pitch_name, "up out of zone", "Two strikes: chase pitch up."
+                return pitch_name, "up out of zone", "Two strikes: chase pitch up." + confidence_note(pitch_name)
         if "Chases splitter down" in tendencies:
-            pitch_name = first_available(["drop", "drop curve", "change"])
+            pitch_name = best_available(["drop", "drop curve", "change"])
             if pitch_name:
-                return pitch_name, "down out of zone", "Two strikes: chase pitch down."
+                return pitch_name, "down out of zone", "Two strikes: chase pitch down." + confidence_note(pitch_name)
         if "Chases sweeper away" in tendencies or "Chases slider away" in tendencies:
-            pitch_name = first_available(["curve", "drop curve", "screw"])
+            pitch_name = best_available(["curve", "drop curve", "screw"])
             if pitch_name:
                 return (
                     pitch_name,
                     softball_location_for_pitch(pitch_name, handedness),
-                    "Two strikes: move off barrel.",
+                    "Two strikes: move off barrel." + confidence_note(pitch_name),
                 )
-        pitch_name = first_available(
-            ["drop curve", "drop", "curve", "screw", "change", "rise"]
-        )
+        pitch_name = best_available(["drop curve", "drop", "curve", "screw", "change", "rise"])
         return (
             pitch_name,
             softball_location_for_pitch(pitch_name, handedness),
-            "Two-strike softball chase pitch.",
+            "Two-strike softball chase pitch." + confidence_note(pitch_name),
         )
 
     if balls > strikes:
-        pitch_name = first_available(["drop", "curve", "screw", "rise"])
+        pitch_name = best_available(["drop", "curve", "screw", "rise"])
         return (
             pitch_name,
             softball_location_for_pitch(pitch_name, handedness),
-            "Hitter count: safe movement strike.",
+            "Hitter count: safe movement strike." + confidence_note(pitch_name),
         )
 
     last = history[-1].lower() if history else ""
 
     if "rise" in last:
-        pitch_name = first_available(["drop", "drop curve", "change"])
+        pitch_name = best_available(["drop", "drop curve", "change"])
         return (
             pitch_name,
             softball_location_for_pitch(pitch_name, handedness),
-            "Pair rise with drop/change.",
+            "Pair rise with drop/change." + confidence_note(pitch_name),
         )
     if "drop" in last and "drop curve" not in last:
-        pitch_name = first_available(["rise", "screw", "curve"])
+        pitch_name = best_available(["rise", "screw", "curve"])
         return (
             pitch_name,
             softball_location_for_pitch(pitch_name, handedness),
-            "Different look after drop.",
+            "Different look after drop." + confidence_note(pitch_name),
         )
     if "curve" in last and "drop curve" not in last:
-        pitch_name = first_available(["screw", "rise", "change"])
+        pitch_name = best_available(["screw", "rise", "change"])
         return (
             pitch_name,
             softball_location_for_pitch(pitch_name, handedness),
-            "Opposite movement after curve.",
+            "Opposite movement after curve." + confidence_note(pitch_name),
         )
     if "screw" in last:
-        pitch_name = first_available(["curve", "rise", "drop"])
+        pitch_name = best_available(["curve", "rise", "drop"])
         return (
             pitch_name,
             softball_location_for_pitch(pitch_name, handedness),
-            "Opposite movement after screw.",
+            "Opposite movement after screw." + confidence_note(pitch_name),
         )
     if "change" in last:
-        pitch_name = first_available(["rise", "drop", "curve"])
+        pitch_name = best_available(["rise", "drop", "curve"])
         return (
             pitch_name,
             softball_location_for_pitch(pitch_name, handedness),
-            "Speed change into movement.",
+            "Speed change into movement." + confidence_note(pitch_name),
         )
     if "drop curve" in last:
-        pitch_name = first_available(["rise", "screw", "change"])
+        pitch_name = best_available(["rise", "screw", "change"])
         return (
             pitch_name,
             softball_location_for_pitch(pitch_name, handedness),
-            "New lane after drop curve.",
+            "New lane after drop curve." + confidence_note(pitch_name),
         )
 
-    pitch_name = first_available(["rise", "drop", "curve", "screw", "change"])
+    pitch_name = best_available(["rise", "drop", "curve", "screw", "change"])
     return (
         pitch_name,
         softball_location_for_pitch(pitch_name, handedness),
-        "Default softball sequence.",
+        "Default softball sequence." + confidence_note(pitch_name),
     )
 
 
