@@ -1,16 +1,21 @@
 import streamlit as st
+import app_data as data
 
-from app_data import (
-    TENDENCY_OPTIONS,
-    POSITIONS_IN_PLAY,
-    CONTACT_TYPES,
-    PLAY_RESULTS,
-    CONTACT_QUALITY_OPTIONS,
-    BALL_QUALITY_OPTIONS,
-    BASEBALL_PITCHES,
-    SOFTBALL_PITCHES,
-    DEFAULT_SESSION_STATE,
+TENDENCY_OPTIONS = data.TENDENCY_OPTIONS
+POSITIONS_IN_PLAY = data.POSITIONS_IN_PLAY
+CONTACT_TYPES = data.CONTACT_TYPES
+PLAY_RESULTS = data.PLAY_RESULTS
+BASEBALL_PITCHES = data.BASEBALL_PITCHES
+SOFTBALL_PITCHES = data.SOFTBALL_PITCHES
+DEFAULT_SESSION_STATE = data.DEFAULT_SESSION_STATE
+
+CONTACT_QUALITY_OPTIONS = getattr(
+    data, "CONTACT_QUALITY_OPTIONS", ["Weak", "Medium", "Hard-hit"]
 )
+BALL_QUALITY_OPTIONS = getattr(
+    data, "BALL_QUALITY_OPTIONS", ["Competitive", "Uncompetitive"]
+)
+
 from app_helpers import (
     initialize_session_state,
     reset_at_bat,
