@@ -29,11 +29,7 @@ def add_out_local():
     st.session_state.outs += 1
     if st.session_state.outs >= 3:
         st.session_state.outs = 0
-        if st.session_state.half_inning == "Top":
-            st.session_state.half_inning = "Bottom"
-        else:
-            st.session_state.half_inning = "Top"
-            st.session_state.inning += 1
+        st.session_state.inning += 1
 
 
 def auto_check_count_end_local():
@@ -165,7 +161,6 @@ elif st.session_state.page == "lineup":
         st.session_state.current_batter_index = 0
         st.session_state.outs = 0
         st.session_state.inning = 1
-        st.session_state.half_inning = "Top"
         reset_at_bat()
         st.session_state.page = "game"
         st.rerun()
@@ -194,7 +189,7 @@ elif st.session_state.page == "game":
 
         info1, info2, info3 = st.columns(3)
         with info1:
-            st.metric("Inning", f"{st.session_state.half_inning} {st.session_state.inning}")
+            st.metric("Inning", st.session_state.inning)
         with info2:
             st.metric("Outs", st.session_state.outs)
         with info3:
@@ -323,7 +318,7 @@ elif st.session_state.page == "game":
 
         elif st.session_state.stage == "at_bat_end":
             st.success(f"At-Bat Over: {st.session_state.last_outcome_text}")
-            st.write(f"Inning: {st.session_state.half_inning} {st.session_state.inning}")
+            st.write(f"Inning: {st.session_state.inning}")
             st.write(f"Outs: {st.session_state.outs}")
             if st.button("Next Batter", use_container_width=True):
                 next_batter()
