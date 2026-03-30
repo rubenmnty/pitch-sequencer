@@ -366,13 +366,13 @@ elif st.session_state.page == "game":
                     if consecutive_same_pitch_balls >= 2:
                         penalty = -5
                     update_pitch_confidence(pitch, penalty)
-                    st.session_state.ab_history.append(f"{pitch} | Ball Quality | Competitive")
+                    st.session_state.ab_history.append("Ball Quality | Competitive")
                 else:
                     penalty = -8
                     if consecutive_same_pitch_balls >= 2:
                         penalty = -12
                     update_pitch_confidence(pitch, penalty)
-                    st.session_state.ab_history.append(f"{pitch} | Ball Quality | Uncompetitive")
+                    st.session_state.ab_history.append("Ball Quality | Uncompetitive")
 
                 st.session_state.pending_result = None
                 st.session_state.stage = "result"
@@ -450,4 +450,4 @@ elif st.session_state.page == "game":
                 for item in st.session_state.game_log:
                     st.write(f"- {item}")
             else:
-                st.write("No completed at-bats yet.")
+                st.write("No completed at-bats yet.") 
