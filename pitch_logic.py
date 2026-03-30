@@ -119,13 +119,18 @@ def sort_candidates(candidates, history):
 def best_available(candidates, history, avoid_last_ball_pitch=False):
     available = [p for p in candidates if pitch_available(p)]
 
-    if avoid_last_ball_pitch:
-        last_event = last_pitch_event(history)
-        if last_event and last_event["outcome"].strip().lower() == "ball":
-            last_pitch = last_event["pitch"]
-            filtered = [p for p in available if p != last_pitch]
-            if filtered:
-                available = filtered
+    last_event = last_pitch_event(history)
+
+    # 🔥 HARD BLOCK: if last pitch was a ball, NEVER repeat it
+    if last_event and last_event["outcome"].strip().lower() == "ball":
+        last_pitch = last_event["pitch"]
+        filtered = [p for p in available if p != last_pitch]
+
+        if filtered:
+            available = filtered
+
+    if not available:
+        available = [p for p in candidates if pitch_available(p)]
 
     if available:
         ordered = sorted(
