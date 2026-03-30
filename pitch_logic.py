@@ -15,42 +15,56 @@ def get_pitch_rank(name: str) -> int:
     return int(profile.get("rank", 99))
 
 
+def is_actual_pitch_event(item: str) -> bool:
+    if item.startswith("Ball Quality |"):
+        return False
+    parts = [p.strip() for p in item.split("|")]
+    return len(parts) >= 3
+
+
 def get_recent_pitch_events(history):
     events = []
     for item in history:
+        if not is_actual_pitch_event(item):
+            continue
         parts = [p.strip() for p in item.split("|")]
-        if len(parts) >= 3:
-            pitch = parts[0]
-            location = parts[1]
-            outcome = parts[2]
-            events.append(
-                {
-                    "pitch": pitch,
-                    "location": location,
-                    "outcome": outcome,
-                    "raw": item,
-                }
-            )
+        pitch = parts[0]
+        location = parts[1]
+        outcome = parts[2]
+        events.append(
+            {
+                "pitch": pitch,
+                "location": location,
+                "outcome": outcome,
+                "raw": item,
+            }
+        )
     return events
 
 
 def consecutive_balls_for_pitch(pitch_name: str, history) -> int:
     events = get_recent_pitch_events(history)
     count = 0
+
     for event in reversed(events):
-        if event["pitch"] != pitch_name:
+        current_pitch = event["pitch"].strip().lower()
+        outcome = event["outcome"].strip().lower()
+
+        if current_pitch != pitch_name.strip().lower():
             break
-        if event["outcome"] == "Ball":
+
+        if outcome == "ball":
             count += 1
         else:
             break
+
     return count
 
 
 def recent_usage_count(pitch_name: str, history, window: int = 4) -> int:
     events = get_recent_pitch_events(history)
     recent = events[-window:]
-    return sum(1 for e in recent if e["pitch"] == pitch_name)
+    return sum(1 for e in recent if e["pitch"].strip().lower() == pitch_name.strip().lower())
 
 
 def last_pitch_name(history):
@@ -64,27 +78,23 @@ def pitch_score(pitch_name: str, history) -> int:
     confidence = get_pitch_confidence_score(pitch_name)
     rank = get_pitch_rank(pitch_name)
 
-    # better rank = more base value
     rank_bonus = max(0, 6 - rank) * 8
-
     score = confidence + rank_bonus
 
-    # anti-repeat penalties
     same_pitch_balls = consecutive_balls_for_pitch(pitch_name, history)
     if same_pitch_balls == 1:
-        score -= 15
+        score -= 20
     elif same_pitch_balls == 2:
-        score -= 35
+        score -= 45
     elif same_pitch_balls >= 3:
-        score -= 60
+        score -= 75
 
-    # general repetition penalty
     usage_count = recent_usage_count(pitch_name, history, window=4)
-    score -= max(0, usage_count - 1) * 8
+    score -= max(0, usage_count - 1) * 10
 
-    # don't immediately repeat the same pitch after a miss-heavy stretch
-    if last_pitch_name(history) == pitch_name and same_pitch_balls >= 1:
-        score -= 15
+    last_pitch = last_pitch_name(history)
+    if last_pitch and last_pitch.strip().lower() == pitch_name.strip().lower() and same_pitch_balls >= 1:
+        score -= 20
 
     return score
 
@@ -158,7 +168,7 @@ def baseball_recommend_pitch(batter, balls, strikes, history):
     slot_num = batter["slot_num"]
     use_default = "Default to lineup spot" in tendencies
 
-    if balls == 0 and strikes == 0 and len(history) == 0:
+    if balls == 0 and strikes == 0 and len(get_recent_pitch_events(history)) == 0:
         if use_default and slot_num == 1:
             pitch_name = best_available(["cutter", "2-seam", "4-seam"], history)
             return (
@@ -212,15 +222,23 @@ def baseball_recommend_pitch(batter, balls, strikes, history):
         )
 
     if balls > strikes:
-        # safer strike, but don't keep spamming the same miss pitch
-        pitch_name = best_available(["cutter", "4-seam", "2-seam", "changeup"], history)
+        last_pitch = last_pitch_name(history)
+        candidates = ["cutter", "4-seam", "2-seam", "changeup"]
+
+        if last_pitch in candidates:
+            candidates = [p for p in candidates if p != last_pitch]
+
+        pitch_name = best_available(candidates, history)
         return (
             pitch_name,
             baseball_location_for_pitch(pitch_name, handedness),
             "Hitter count: safer competitive strike, with anti-repeat adjustment." + confidence_note(pitch_name),
         )
 
-    last = history[-1].lower() if history else ""
+    last = ""
+    actual_events = get_recent_pitch_events(history)
+    if actual_events:
+        last = actual_events[-1]["raw"].lower()
 
     if "4-seam" in last and "up" in last:
         pitch_name = best_available(["splitter", "changeup", "curveball"], history)
@@ -272,7 +290,7 @@ def softball_recommend_pitch(batter, balls, strikes, history):
     slot_num = batter["slot_num"]
     use_default = "Default to lineup spot" in tendencies
 
-    if balls == 0 and strikes == 0 and len(history) == 0:
+    if balls == 0 and strikes == 0 and len(get_recent_pitch_events(history)) == 0:
         if use_default and slot_num == 1:
             pitch_name = best_available(["curve", "screw", "drop"], history)
             return (
@@ -326,14 +344,23 @@ def softball_recommend_pitch(batter, balls, strikes, history):
         )
 
     if balls > strikes:
-        pitch_name = best_available(["drop", "curve", "screw", "rise", "change"], history)
+        last_pitch = last_pitch_name(history)
+        candidates = ["drop", "curve", "screw", "rise", "change"]
+
+        if last_pitch in candidates:
+            candidates = [p for p in candidates if p != last_pitch]
+
+        pitch_name = best_available(candidates, history)
         return (
             pitch_name,
             softball_location_for_pitch(pitch_name, handedness),
             "Hitter count: safe movement strike, with anti-repeat adjustment." + confidence_note(pitch_name),
         )
 
-    last = history[-1].lower() if history else ""
+    last = ""
+    actual_events = get_recent_pitch_events(history)
+    if actual_events:
+        last = actual_events[-1]["raw"].lower()
 
     if "rise" in last:
         pitch_name = best_available(["drop", "drop curve", "change"], history)
