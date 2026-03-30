@@ -5,6 +5,8 @@ from app_data import (
     POSITIONS_IN_PLAY,
     CONTACT_TYPES,
     PLAY_RESULTS,
+    CONTACT_QUALITY_OPTIONS,
+    BALL_QUALITY_OPTIONS,
     BASEBALL_PITCHES,
     SOFTBALL_PITCHES,
     DEFAULT_SESSION_STATE,
@@ -23,6 +25,19 @@ from pitch_logic import recommend_pitch
 st.set_page_config(page_title="Pitch Sequencer", layout="centered")
 
 initialize_session_state(DEFAULT_SESSION_STATE)
+
+
+def confidence_to_score(label):
+    mapping = {1: 20, 2: 40, 3: 60, 4: 80, 5: 95}
+    return mapping.get(label, 60)
+
+
+def update_pitch_confidence(pitch_name, delta):
+    if pitch_name not in st.session_state.pitch_profiles:
+        return
+    current = st.session_state.pitch_profiles[pitch_name]["confidence_score"]
+    new_score = max(0, min(100, current + delta))
+    st.session_state.pitch_profiles[pitch_name]["confidence_score"] = new_score
 
 
 def add_out_local():
@@ -75,9 +90,7 @@ elif st.session_state.page == "pitcher_setup":
     )
 
     available_pitches = (
-        BASEBALL_PITCHES
-        if st.session_state.sport == "Baseball"
-        else SOFTBALL_PITCHES
+        BASEBALL_PITCHES if st.session_state.sport == "Baseball" else SOFTBALL_PITCHES
     )
 
     pitcher_pitches = st.multiselect(
@@ -86,15 +99,49 @@ elif st.session_state.page == "pitcher_setup":
         default=st.session_state.pitcher_pitches,
     )
 
-    st.write("Pick at least 2 if possible so the sequencing has more to work with.")
+    st.write("Pick the pitches, then rank them and set confidence.")
+
+    pitch_profiles = {}
+    if pitcher_pitches:
+        st.markdown("### Pitch Order and Confidence")
+        st.write("Rank 1 = primary pitch. Confidence 1–5 = how good it feels today.")
+
+        used_ranks = []
+        for pitch in pitcher_pitches:
+            col1, col2 = st.columns(2)
+            with col1:
+                rank = st.selectbox(
+                    f"{pitch} rank",
+                    options=list(range(1, len(pitcher_pitches) + 1)),
+                    key=f"rank_{pitch}",
+                )
+            with col2:
+                confidence_label = st.selectbox(
+                    f"{pitch} confidence",
+                    options=[1, 2, 3, 4, 5],
+                    index=2,
+                    key=f"conf_{pitch}",
+                )
+            used_ranks.append(rank)
+            pitch_profiles[pitch] = {
+                "rank": rank,
+                "confidence_label": confidence_label,
+                "confidence_score": confidence_to_score(confidence_label),
+            }
+
+        if len(set(used_ranks)) != len(used_ranks):
+            st.warning("Each pitch should have a different rank.")
 
     if st.button("Continue to Lineup", use_container_width=True):
         if not pitcher_pitches:
             st.error("Select at least one pitch.")
+        elif len(set([pitch_profiles[p]["rank"] for p in pitcher_pitches])) != len(pitcher_pitches):
+            st.error("Each selected pitch needs its own unique rank.")
         else:
             st.session_state.pitcher_name = pitcher_name.strip() or "Pitcher"
             st.session_state.pitcher_hand = pitcher_hand
             st.session_state.pitcher_pitches = pitcher_pitches
+            st.session_state.pitch_profiles = pitch_profiles
             st.session_state.page = "lineup"
             st.rerun()
 
@@ -187,6 +234,18 @@ elif st.session_state.page == "game":
         )
         st.write(f"Pitch Mix: {', '.join(st.session_state.pitcher_pitches)}")
 
+        with st.expander("Pitch Confidence"):
+            for pitch_name in sorted(
+                st.session_state.pitch_profiles.keys(),
+                key=lambda p: st.session_state.pitch_profiles[p]["rank"]
+            ):
+                profile = st.session_state.pitch_profiles[pitch_name]
+                st.write(
+                    f"{profile['rank']}. {pitch_name} | "
+                    f"Pregame {profile['confidence_label']}/5 | "
+                    f"Live {profile['confidence_score']}"
+                )
+
         info1, info2, info3 = st.columns(3)
         with info1:
             st.metric("Inning", st.session_state.inning)
@@ -226,7 +285,8 @@ elif st.session_state.page == "game":
                 location = st.session_state.pending_pitch["location"]
                 st.session_state.balls += 1
                 record_pitch_line(pitch, location, "Ball")
-                auto_check_count_end_local()
+                st.session_state.pending_result = "Ball"
+                st.session_state.stage = "ball_quality"
                 st.rerun()
 
             if c2.button("Called Strike", use_container_width=True):
@@ -234,6 +294,7 @@ elif st.session_state.page == "game":
                 location = st.session_state.pending_pitch["location"]
                 st.session_state.strikes += 1
                 record_pitch_line(pitch, location, "Called Strike")
+                update_pitch_confidence(pitch, 4)
                 auto_check_count_end_local()
                 st.rerun()
 
@@ -243,6 +304,7 @@ elif st.session_state.page == "game":
                 location = st.session_state.pending_pitch["location"]
                 st.session_state.strikes += 1
                 record_pitch_line(pitch, location, "Swing Miss")
+                update_pitch_confidence(pitch, 8)
                 if auto_check_count_end_local():
                     st.rerun()
                 st.session_state.pending_result = "Swing Miss"
@@ -255,6 +317,7 @@ elif st.session_state.page == "game":
                 if st.session_state.strikes < 2:
                     st.session_state.strikes += 1
                 record_pitch_line(pitch, location, "Swing Foul")
+                update_pitch_confidence(pitch, 1)
                 st.session_state.pending_result = "Swing Foul"
                 st.session_state.stage = "swing_details"
                 st.rerun()
@@ -272,7 +335,30 @@ elif st.session_state.page == "game":
                 pitch = st.session_state.pending_pitch["pitch"]
                 location = st.session_state.pending_pitch["location"]
                 record_pitch_line(pitch, location, "HBP")
+                update_pitch_confidence(pitch, -6)
                 end_at_bat("Hit By Pitch")
+                st.rerun()
+
+        elif st.session_state.stage == "ball_quality":
+            st.markdown("## Ball Quality")
+            pitch = st.session_state.pending_pitch["pitch"]
+
+            ball_quality = st.radio(
+                "Was it competitive?",
+                BALL_QUALITY_OPTIONS,
+                horizontal=True,
+            )
+
+            if st.button("Submit Ball Quality", use_container_width=True):
+                if ball_quality == "Competitive":
+                    update_pitch_confidence(pitch, -2)
+                    st.session_state.ab_history.append("Ball | Competitive")
+                else:
+                    update_pitch_confidence(pitch, -8)
+                    st.session_state.ab_history.append("Ball | Uncompetitive")
+                st.session_state.pending_result = None
+                st.session_state.stage = "result"
+                auto_check_count_end_local()
                 st.rerun()
 
         elif st.session_state.stage == "swing_details":
@@ -307,10 +393,20 @@ elif st.session_state.page == "game":
             contact_type = st.selectbox("Contact Type", CONTACT_TYPES)
             direction = st.selectbox("Direction", POSITIONS_IN_PLAY)
             play_result = st.selectbox("Result", PLAY_RESULTS)
+            contact_quality = st.selectbox("Contact Quality", CONTACT_QUALITY_OPTIONS)
 
             if st.button("Submit Play", use_container_width=True):
-                play_text = f"{contact_type} to {direction} | {play_result}"
+                play_text = f"{contact_type} to {direction} | {play_result} | {contact_quality}"
                 st.session_state.ab_history.append(play_text)
+
+                pitch = st.session_state.pending_pitch["pitch"]
+                if contact_quality == "Weak":
+                    update_pitch_confidence(pitch, 5)
+                elif contact_quality == "Medium":
+                    update_pitch_confidence(pitch, 0)
+                else:
+                    update_pitch_confidence(pitch, -10)
+
                 if play_result == "Out":
                     add_out_local()
                 end_at_bat(play_text)
