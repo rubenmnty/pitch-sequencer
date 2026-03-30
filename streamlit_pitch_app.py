@@ -17,7 +17,6 @@ from app_helpers import (
     get_default_profile,
     record_pitch_line,
     end_at_bat,
-    auto_check_count_end,
 )
 from pitch_logic import recommend_pitch
 
@@ -35,6 +34,17 @@ def add_out_local():
         else:
             st.session_state.half_inning = "Top"
             st.session_state.inning += 1
+
+
+def auto_check_count_end_local():
+    if st.session_state.balls >= 4:
+        end_at_bat("Walk")
+        return True
+    if st.session_state.strikes >= 3:
+        add_out_local()
+        end_at_bat("Strikeout")
+        return True
+    return False
 
 
 # -------------------------
@@ -221,7 +231,7 @@ elif st.session_state.page == "game":
                 location = st.session_state.pending_pitch["location"]
                 st.session_state.balls += 1
                 record_pitch_line(pitch, location, "Ball")
-                auto_check_count_end()
+                auto_check_count_end_local()
                 st.rerun()
 
             if c2.button("Called Strike", use_container_width=True):
@@ -229,7 +239,7 @@ elif st.session_state.page == "game":
                 location = st.session_state.pending_pitch["location"]
                 st.session_state.strikes += 1
                 record_pitch_line(pitch, location, "Called Strike")
-                auto_check_count_end()
+                auto_check_count_end_local()
                 st.rerun()
 
             c3, c4 = st.columns(2)
@@ -238,7 +248,7 @@ elif st.session_state.page == "game":
                 location = st.session_state.pending_pitch["location"]
                 st.session_state.strikes += 1
                 record_pitch_line(pitch, location, "Swing Miss")
-                if auto_check_count_end():
+                if auto_check_count_end_local():
                     st.rerun()
                 st.session_state.pending_result = "Swing Miss"
                 st.session_state.stage = "swing_details"
