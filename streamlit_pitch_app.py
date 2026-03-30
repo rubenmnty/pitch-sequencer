@@ -265,7 +265,7 @@ elif st.session_state.page == "game":
         st.write(f"Handedness: {batter['hand']}")
         st.write(f"Count: {st.session_state.balls}-{st.session_state.strikes}")
 
-        if st.session_state.stage == "result":
+        if st.session_state.stage == "result" and st.session_state.pending_pitch is None:
             pitch, location, reason = recommend_pitch(
                 batter,
                 st.session_state.balls,
