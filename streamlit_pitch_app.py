@@ -140,7 +140,9 @@ elif st.session_state.page == "pitcher_setup":
     if st.button("Continue to Lineup", use_container_width=True):
         if not pitcher_pitches:
             st.error("Select at least one pitch.")
-        elif len(set([pitch_profiles[p]["rank"] for p in pitcher_pitches])) != len(pitcher_pitches):
+        elif len(set([pitch_profiles[p]["rank"] for p in pitcher_pitches])) != len(
+            pitcher_pitches
+        ):
             st.error("Each selected pitch needs its own unique rank.")
         else:
             st.session_state.pitcher_name = pitcher_name.strip() or "Pitcher"
@@ -242,7 +244,7 @@ elif st.session_state.page == "game":
         with st.expander("Pitch Confidence"):
             for pitch_name in sorted(
                 st.session_state.pitch_profiles.keys(),
-                key=lambda p: st.session_state.pitch_profiles[p]["rank"]
+                key=lambda p: st.session_state.pitch_profiles[p]["rank"],
             ):
                 profile = st.session_state.pitch_profiles[pitch_name]
                 st.write(
@@ -264,23 +266,26 @@ elif st.session_state.page == "game":
         st.write(f"Count: {st.session_state.balls}-{st.session_state.strikes}")
 
         if st.session_state.stage == "result":
-    pitch, location, reason = recommend_pitch(
-        batter,
-        st.session_state.balls,
-        st.session_state.strikes,
-        st.session_state.ab_history,
-    )
-    st.session_state.pending_pitch = {
-        "pitch": pitch,
-        "location": location,
-        "reason": reason,
-    }
+            pitch, location, reason = recommend_pitch(
+                batter,
+                st.session_state.balls,
+                st.session_state.strikes,
+                st.session_state.ab_history,
+            )
+            st.session_state.pending_pitch = {
+                "pitch": pitch,
+                "location": location,
+                "reason": reason,
+            }
 
-if st.session_state.pending_pitch is not None and st.session_state.stage != "at_bat_end":
-    st.markdown("### Pitch Call")
-    st.write(f"**Pitch:** {st.session_state.pending_pitch['pitch']}")
-    st.write(f"**Location:** {st.session_state.pending_pitch['location']}")
-    st.write(f"**Why:** {st.session_state.pending_pitch['reason']}")
+        if (
+            st.session_state.pending_pitch is not None
+            and st.session_state.stage != "at_bat_end"
+        ):
+            st.markdown("### Pitch Call")
+            st.write(f"**Pitch:** {st.session_state.pending_pitch['pitch']}")
+            st.write(f"**Location:** {st.session_state.pending_pitch['location']}")
+            st.write(f"**Why:** {st.session_state.pending_pitch['reason']}")
 
         if st.session_state.stage == "result":
             st.markdown("### Result")
@@ -357,7 +362,8 @@ if st.session_state.pending_pitch is not None and st.session_state.stage != "at_
 
             if st.button("Submit Ball Quality", use_container_width=True):
                 recent_pitch_events = [
-                    item for item in st.session_state.ab_history
+                    item
+                    for item in st.session_state.ab_history
                     if item.startswith(f"{pitch} |") and "| Ball" in item
                 ]
                 consecutive_same_pitch_balls = len(recent_pitch_events[-2:])
@@ -415,7 +421,9 @@ if st.session_state.pending_pitch is not None and st.session_state.stage != "at_
             contact_quality = st.selectbox("Contact Quality", CONTACT_QUALITY_OPTIONS)
 
             if st.button("Submit Play", use_container_width=True):
-                play_text = f"{contact_type} to {direction} | {play_result} | {contact_quality}"
+                play_text = (
+                    f"{contact_type} to {direction} | {play_result} | {contact_quality}"
+                )
                 st.session_state.ab_history.append(play_text)
 
                 pitch = st.session_state.pending_pitch["pitch"]
@@ -451,4 +459,4 @@ if st.session_state.pending_pitch is not None and st.session_state.stage != "at_
                 for item in st.session_state.game_log:
                     st.write(f"- {item}")
             else:
-                st.write("No completed at-bats yet.") 
+                st.write("No completed at-bats yet.")
