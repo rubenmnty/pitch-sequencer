@@ -18,13 +18,24 @@ from app_helpers import (
     record_pitch_line,
     end_at_bat,
     auto_check_count_end,
-    add_out,
 )
 from pitch_logic import recommend_pitch
 
 st.set_page_config(page_title="Pitch Sequencer", layout="centered")
 
 initialize_session_state(DEFAULT_SESSION_STATE)
+
+
+def add_out_local():
+    st.session_state.outs += 1
+    if st.session_state.outs >= 3:
+        st.session_state.outs = 0
+        if st.session_state.half_inning == "Top":
+            st.session_state.half_inning = "Bottom"
+        else:
+            st.session_state.half_inning = "Top"
+            st.session_state.inning += 1
+
 
 # -------------------------
 # WELCOME
@@ -296,7 +307,7 @@ elif st.session_state.page == "game":
                 play_text = f"{contact_type} to {direction} | {play_result}"
                 st.session_state.ab_history.append(play_text)
                 if play_result == "Out":
-                    add_out()
+                    add_out_local()
                 end_at_bat(play_text)
                 st.rerun()
 
