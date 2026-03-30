@@ -38,6 +38,9 @@ PLAY_RESULTS = [
     "Fielder's choice",
 ]
 
+CONTACT_QUALITY_OPTIONS = ["Weak", "Medium", "Hard-hit"]
+BALL_QUALITY_OPTIONS = ["Competitive", "Uncompetitive"]
+
 BASEBALL_PITCHES = [
     "4-seam",
     "2-seam",
@@ -64,6 +67,7 @@ DEFAULT_SESSION_STATE = {
     "pitcher_name": "",
     "pitcher_hand": "R",
     "pitcher_pitches": [],
+    "pitch_profiles": {},   # {"slider": {"rank":1,"confidence_label":5,"confidence_score":95}, ...}
     "lineup_count": 9,
     "lineup": [],
     "current_batter_index": 0,
@@ -71,10 +75,9 @@ DEFAULT_SESSION_STATE = {
     "strikes": 0,
     "outs": 0,
     "inning": 1,
-    "half_inning": "Top",
     "ab_history": [],
     "game_log": [],
-    "stage": "result",
+    "stage": "result",          # result, ball_quality, swing_details, in_play, at_bat_end
     "pending_result": None,
     "pending_pitch": None,
     "last_outcome_text": "",
