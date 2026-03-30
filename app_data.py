@@ -67,7 +67,7 @@ DEFAULT_SESSION_STATE = {
     "pitcher_name": "",
     "pitcher_hand": "R",
     "pitcher_pitches": [],
-    "pitch_profiles": {},   # {"slider": {"rank":1,"confidence_label":5,"confidence_score":95}, ...}
+    "pitch_profiles": {},
     "lineup_count": 9,
     "lineup": [],
     "current_batter_index": 0,
@@ -77,7 +77,7 @@ DEFAULT_SESSION_STATE = {
     "inning": 1,
     "ab_history": [],
     "game_log": [],
-    "stage": "result",          # result, ball_quality, swing_details, in_play, at_bat_end
+    "stage": "result",
     "pending_result": None,
     "pending_pitch": None,
     "last_outcome_text": "",
