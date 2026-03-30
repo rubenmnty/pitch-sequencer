@@ -18,6 +18,7 @@ from app_helpers import (
     record_pitch_line,
     end_at_bat,
     auto_check_count_end,
+    add_out,
 )
 from pitch_logic import recommend_pitch
 
@@ -255,7 +256,7 @@ elif st.session_state.page == "game":
                 pitch = st.session_state.pending_pitch["pitch"]
                 location = st.session_state.pending_pitch["location"]
                 record_pitch_line(pitch, location, "HBP")
-                end_at_bat("Hit By Pitch", False)
+                end_at_bat("Hit By Pitch")
                 st.rerun()
 
         elif st.session_state.stage == "swing_details":
@@ -294,8 +295,9 @@ elif st.session_state.page == "game":
             if st.button("Submit Play", use_container_width=True):
                 play_text = f"{contact_type} to {direction} | {play_result}"
                 st.session_state.ab_history.append(play_text)
-                add_out_on_end = play_result == "Out"
-                end_at_bat(play_text, add_out_on_end)
+                if play_result == "Out":
+                    add_out()
+                end_at_bat(play_text)
                 st.rerun()
 
         elif st.session_state.stage == "at_bat_end":
