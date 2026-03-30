@@ -88,24 +88,23 @@ def pitch_score(pitch_name: str, history) -> int:
     rank_bonus = max(0, 6 - rank) * 8
     score = confidence + rank_bonus
 
+    # 🔴 STRONG anti-repeat penalty
     same_pitch_balls = consecutive_balls_for_pitch(pitch_name, history)
-    if same_pitch_balls == 1:
-        score -= 30
-    elif same_pitch_balls == 2:
-        score -= 60
-    elif same_pitch_balls >= 3:
-        score -= 100
+    if same_pitch_balls >= 1:
+        score -= 120
 
+    # 🔴 usage penalty (slightly stronger)
     usage_count = recent_usage_count(pitch_name, history, window=4)
-    score -= max(0, usage_count - 1) * 10
+    score -= max(0, usage_count - 1) * 12
 
+    # 🔴 HARD STOP if last pitch was a ball with same pitch
     last_event = last_pitch_event(history)
     if last_event:
         last_pitch = last_event["pitch"].strip().lower()
         last_outcome = last_event["outcome"].strip().lower()
 
         if last_pitch == pitch_name.strip().lower() and last_outcome == "ball":
-            score -= 40
+            score -= 150
 
     return score
 
