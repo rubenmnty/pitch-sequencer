@@ -355,29 +355,29 @@ elif st.session_state.page == "game":
             )
 
             if st.button("Submit Ball Quality", use_container_width=True):
-    recent_pitch_events = [
-        item for item in st.session_state.ab_history
-        if item.startswith(f"{pitch} |") and "| Ball" in item
-    ]
-    consecutive_same_pitch_balls = len(recent_pitch_events[-2:])
+                recent_pitch_events = [
+                    item for item in st.session_state.ab_history
+                    if item.startswith(f"{pitch} |") and "| Ball" in item
+                ]
+                consecutive_same_pitch_balls = len(recent_pitch_events[-2:])
 
-    if ball_quality == "Competitive":
-        penalty = -2
-        if consecutive_same_pitch_balls >= 2:
-            penalty = -5
-        update_pitch_confidence(pitch, penalty)
-        st.session_state.ab_history.append(f"{pitch} | Ball Quality | Competitive")
-    else:
-        penalty = -8
-        if consecutive_same_pitch_balls >= 2:
-            penalty = -12
-        update_pitch_confidence(pitch, penalty)
-        st.session_state.ab_history.append(f"{pitch} | Ball Quality | Uncompetitive")
+                if ball_quality == "Competitive":
+                    penalty = -2
+                    if consecutive_same_pitch_balls >= 2:
+                        penalty = -5
+                    update_pitch_confidence(pitch, penalty)
+                    st.session_state.ab_history.append(f"{pitch} | Ball Quality | Competitive")
+                else:
+                    penalty = -8
+                    if consecutive_same_pitch_balls >= 2:
+                        penalty = -12
+                    update_pitch_confidence(pitch, penalty)
+                    st.session_state.ab_history.append(f"{pitch} | Ball Quality | Uncompetitive")
 
-    st.session_state.pending_result = None
-    st.session_state.stage = "result"
-    auto_check_count_end_local()
-    st.rerun()
+                st.session_state.pending_result = None
+                st.session_state.stage = "result"
+                auto_check_count_end_local()
+                st.rerun()
 
         elif st.session_state.stage == "swing_details":
             st.markdown("## Swing Feedback")
