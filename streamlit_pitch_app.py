@@ -278,10 +278,7 @@ elif st.session_state.page == "game":
                 "reason": reason,
             }
 
-        if (
-            st.session_state.pending_pitch is not None
-            and st.session_state.stage != "at_bat_end"
-        ):
+        if st.session_state.stage == "result" and st.session_state.pending_pitch is not None:
             st.markdown("### Pitch Call")
             st.write(f"**Pitch:** {st.session_state.pending_pitch['pitch']}")
             st.write(f"**Location:** {st.session_state.pending_pitch['location']}")
