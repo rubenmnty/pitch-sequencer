@@ -122,9 +122,9 @@ def best_available(candidates, history, avoid_last_ball_pitch=False):
     available = [p for p in candidates if pitch_available(p)]
     last_event = last_pitch_event(history)
 
-    if last_event and last_event["outcome"].strip().lower() == "ball":
-        last_pitch = last_event["pitch"]
-        filtered = [p for p in available if p != last_pitch]
+    if avoid_last_ball_pitch and last_event and last_event["outcome"].strip().lower() == "ball":
+        last_pitch = last_event["pitch"].strip().lower()
+        filtered = [p for p in available if p.strip().lower() != last_pitch]
         if filtered:
             available = filtered
         else:
@@ -140,8 +140,9 @@ def best_available(candidates, history, avoid_last_ball_pitch=False):
     if st.session_state.pitcher_pitches:
         fallback = st.session_state.pitcher_pitches[:]
 
-        if last_event:
-            fallback_filtered = [p for p in fallback if p != last_event["pitch"]]
+        if avoid_last_ball_pitch and last_event:
+            last_pitch = last_event["pitch"].strip().lower()
+            fallback_filtered = [p for p in fallback if p.strip().lower() != last_pitch]
             if fallback_filtered:
                 fallback = fallback_filtered
 
@@ -274,7 +275,9 @@ def baseball_recommend_pitch(batter, balls, strikes, history):
             avoid_last_ball_pitch=True,
         )
         if pitch_name is None:
-            pitch_name = best_available(st.session_state.pitcher_pitches, history)
+            pitch_name = best_available(
+                st.session_state.pitcher_pitches, history, avoid_last_ball_pitch=True
+            )
         return (
             pitch_name,
             baseball_location_for_pitch(pitch_name, handedness),
@@ -288,7 +291,9 @@ def baseball_recommend_pitch(batter, balls, strikes, history):
             avoid_last_ball_pitch=True,
         )
         if pitch_name is None:
-            pitch_name = best_available(st.session_state.pitcher_pitches, history)
+            pitch_name = best_available(
+                st.session_state.pitcher_pitches, history, avoid_last_ball_pitch=True
+            )
         return (
             pitch_name,
             baseball_location_for_pitch(pitch_name, handedness),
@@ -308,7 +313,9 @@ def baseball_recommend_pitch(batter, balls, strikes, history):
             avoid_last_ball_pitch=True,
         )
         if pitch_name is None:
-            pitch_name = best_available(st.session_state.pitcher_pitches, history)
+            pitch_name = best_available(
+                st.session_state.pitcher_pitches, history, avoid_last_ball_pitch=True
+            )
         return (
             pitch_name,
             "down out of zone"
@@ -316,6 +323,7 @@ def baseball_recommend_pitch(batter, balls, strikes, history):
             else baseball_location_for_pitch(pitch_name, handedness),
             "Tunnel off elevated fastball." + confidence_note(pitch_name),
         )
+
     if "2-seam" in last or "cutter" in last:
         pitch_name = best_available(
             ["slider", "sweeper", "curveball", "splitter"],
@@ -323,40 +331,57 @@ def baseball_recommend_pitch(batter, balls, strikes, history):
             avoid_last_ball_pitch=True,
         )
         if pitch_name is None:
-            pitch_name = best_available(st.session_state.pitcher_pitches, history)
+            pitch_name = best_available(
+                st.session_state.pitcher_pitches, history, avoid_last_ball_pitch=True
+            )
         return (
             pitch_name,
             baseball_location_for_pitch(pitch_name, handedness),
             "Move off previous hard pitch." + confidence_note(pitch_name),
         )
+
     if "slider" in last or "sweeper" in last:
         pitch_name = best_available(
-            ["4-seam", "2-seam", "cutter"], history, avoid_last_ball_pitch=True
+            ["4-seam", "2-seam", "cutter"],
+            history,
+            avoid_last_ball_pitch=True,
         )
         if pitch_name is None:
-            pitch_name = best_available(st.session_state.pitcher_pitches, history)
+            pitch_name = best_available(
+                st.session_state.pitcher_pitches, history, avoid_last_ball_pitch=True
+            )
         return (
             pitch_name,
             baseball_location_for_pitch(pitch_name, handedness),
             "Change lane after breaking ball." + confidence_note(pitch_name),
         )
+
     if "splitter" in last or "changeup" in last:
         pitch_name = best_available(
-            ["4-seam", "cutter"], history, avoid_last_ball_pitch=True
+            ["4-seam", "cutter"],
+            history,
+            avoid_last_ball_pitch=True,
         )
         if pitch_name is None:
-            pitch_name = best_available(st.session_state.pitcher_pitches, history)
+            pitch_name = best_available(
+                st.session_state.pitcher_pitches, history, avoid_last_ball_pitch=True
+            )
         return (
             pitch_name,
             baseball_location_for_pitch(pitch_name, handedness),
             "Climb after soft/down pitch." + confidence_note(pitch_name),
         )
+
     if "curveball" in last:
         pitch_name = best_available(
-            ["4-seam", "cutter", "changeup"], history, avoid_last_ball_pitch=True
+            ["4-seam", "cutter", "changeup"],
+            history,
+            avoid_last_ball_pitch=True,
         )
         if pitch_name is None:
-            pitch_name = best_available(st.session_state.pitcher_pitches, history)
+            pitch_name = best_available(
+                st.session_state.pitcher_pitches, history, avoid_last_ball_pitch=True
+            )
         return (
             pitch_name,
             baseball_location_for_pitch(pitch_name, handedness),
@@ -364,10 +389,14 @@ def baseball_recommend_pitch(batter, balls, strikes, history):
         )
 
     pitch_name = best_available(
-        ["4-seam", "2-seam", "cutter"], history, avoid_last_ball_pitch=True
+        ["4-seam", "2-seam", "cutter"],
+        history,
+        avoid_last_ball_pitch=True,
     )
     if pitch_name is None:
-        pitch_name = best_available(st.session_state.pitcher_pitches, history)
+        pitch_name = best_available(
+            st.session_state.pitcher_pitches, history, avoid_last_ball_pitch=True
+        )
     return (
         pitch_name,
         baseball_location_for_pitch(pitch_name, handedness),
@@ -457,7 +486,9 @@ def softball_recommend_pitch(batter, balls, strikes, history):
             avoid_last_ball_pitch=True,
         )
         if pitch_name is None:
-            pitch_name = best_available(st.session_state.pitcher_pitches, history)
+            pitch_name = best_available(
+                st.session_state.pitcher_pitches, history, avoid_last_ball_pitch=True
+            )
         return (
             pitch_name,
             softball_location_for_pitch(pitch_name, handedness),
@@ -471,7 +502,9 @@ def softball_recommend_pitch(batter, balls, strikes, history):
             avoid_last_ball_pitch=True,
         )
         if pitch_name is None:
-            pitch_name = best_available(st.session_state.pitcher_pitches, history)
+            pitch_name = best_available(
+                st.session_state.pitcher_pitches, history, avoid_last_ball_pitch=True
+            )
         return (
             pitch_name,
             softball_location_for_pitch(pitch_name, handedness),
@@ -486,65 +519,94 @@ def softball_recommend_pitch(batter, balls, strikes, history):
 
     if "rise" in last:
         pitch_name = best_available(
-            ["drop", "drop curve", "change"], history, avoid_last_ball_pitch=True
+            ["drop", "drop curve", "change"],
+            history,
+            avoid_last_ball_pitch=True,
         )
         if pitch_name is None:
-            pitch_name = best_available(st.session_state.pitcher_pitches, history)
+            pitch_name = best_available(
+                st.session_state.pitcher_pitches, history, avoid_last_ball_pitch=True
+            )
         return (
             pitch_name,
             softball_location_for_pitch(pitch_name, handedness),
             "Pair rise with drop/change." + confidence_note(pitch_name),
         )
+
     if "drop" in last and "drop curve" not in last:
         pitch_name = best_available(
-            ["rise", "screw", "curve"], history, avoid_last_ball_pitch=True
+            ["rise", "screw", "curve"],
+            history,
+            avoid_last_ball_pitch=True,
         )
         if pitch_name is None:
-            pitch_name = best_available(st.session_state.pitcher_pitches, history)
+            pitch_name = best_available(
+                st.session_state.pitcher_pitches, history, avoid_last_ball_pitch=True
+            )
         return (
             pitch_name,
             softball_location_for_pitch(pitch_name, handedness),
             "Different look after drop." + confidence_note(pitch_name),
         )
+
     if "curve" in last and "drop curve" not in last:
         pitch_name = best_available(
-            ["screw", "rise", "change"], history, avoid_last_ball_pitch=True
+            ["screw", "rise", "change"],
+            history,
+            avoid_last_ball_pitch=True,
         )
         if pitch_name is None:
-            pitch_name = best_available(st.session_state.pitcher_pitches, history)
+            pitch_name = best_available(
+                st.session_state.pitcher_pitches, history, avoid_last_ball_pitch=True
+            )
         return (
             pitch_name,
             softball_location_for_pitch(pitch_name, handedness),
             "Opposite movement after curve." + confidence_note(pitch_name),
         )
+
     if "screw" in last:
         pitch_name = best_available(
-            ["curve", "rise", "drop"], history, avoid_last_ball_pitch=True
+            ["curve", "rise", "drop"],
+            history,
+            avoid_last_ball_pitch=True,
         )
         if pitch_name is None:
-            pitch_name = best_available(st.session_state.pitcher_pitches, history)
+            pitch_name = best_available(
+                st.session_state.pitcher_pitches, history, avoid_last_ball_pitch=True
+            )
         return (
             pitch_name,
             softball_location_for_pitch(pitch_name, handedness),
             "Opposite movement after screw." + confidence_note(pitch_name),
         )
+
     if "change" in last:
         pitch_name = best_available(
-            ["rise", "drop", "curve"], history, avoid_last_ball_pitch=True
+            ["rise", "drop", "curve"],
+            history,
+            avoid_last_ball_pitch=True,
         )
         if pitch_name is None:
-            pitch_name = best_available(st.session_state.pitcher_pitches, history)
+            pitch_name = best_available(
+                st.session_state.pitcher_pitches, history, avoid_last_ball_pitch=True
+            )
         return (
             pitch_name,
             softball_location_for_pitch(pitch_name, handedness),
             "Speed change into movement." + confidence_note(pitch_name),
         )
+
     if "drop curve" in last:
         pitch_name = best_available(
-            ["rise", "screw", "change"], history, avoid_last_ball_pitch=True
+            ["rise", "screw", "change"],
+            history,
+            avoid_last_ball_pitch=True,
         )
         if pitch_name is None:
-            pitch_name = best_available(st.session_state.pitcher_pitches, history)
+            pitch_name = best_available(
+                st.session_state.pitcher_pitches, history, avoid_last_ball_pitch=True
+            )
         return (
             pitch_name,
             softball_location_for_pitch(pitch_name, handedness),
@@ -557,7 +619,9 @@ def softball_recommend_pitch(batter, balls, strikes, history):
         avoid_last_ball_pitch=True,
     )
     if pitch_name is None:
-        pitch_name = best_available(st.session_state.pitcher_pitches, history)
+        pitch_name = best_available(
+            st.session_state.pitcher_pitches, history, avoid_last_ball_pitch=True
+        )
     return (
         pitch_name,
         softball_location_for_pitch(pitch_name, handedness),
@@ -573,11 +637,16 @@ def force_different_after_ball(pitch_name, history):
     if last_event["outcome"].strip().lower() != "ball":
         return pitch_name
 
-    if pitch_name != last_event["pitch"]:
+    last_pitch = last_event["pitch"].strip().lower()
+    current_pitch = pitch_name.strip().lower()
+
+    if current_pitch != last_pitch:
         return pitch_name
 
     alternatives = [
-        p for p in st.session_state.pitcher_pitches if p != last_event["pitch"]
+        p
+        for p in st.session_state.pitcher_pitches
+        if p.strip().lower() != last_pitch
     ]
 
     if not alternatives:
@@ -610,4 +679,3 @@ def recommend_pitch(batter, balls, strikes, history):
         reason += " Adjusted to avoid repeating the same pitch after a ball."
 
     return adjusted_pitch, location, reason
-Like that?
