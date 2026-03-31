@@ -212,11 +212,6 @@ def baseball_alternate_locations(pitch_name: str, batter_hand: str):
     return [baseball_location_for_pitch(pitch_name, batter_hand)]
 
 
-def baseball_competitive_adjusted_location(pitch_name: str, batter_hand: str):
-    options = baseball_alternate_locations(pitch_name, batter_hand)
-    return options[1] if len(options) > 1 else options[0]
-
-
 def softball_location_for_pitch(pitch_name: str, batter_hand: str):
     if pitch_name == "rise":
         return "up away" if batter_hand == "R" else "up in"
@@ -249,11 +244,6 @@ def softball_alternate_locations(pitch_name: str, batter_hand: str):
     return [softball_location_for_pitch(pitch_name, batter_hand)]
 
 
-def softball_competitive_adjusted_location(pitch_name: str, batter_hand: str):
-    options = softball_alternate_locations(pitch_name, batter_hand)
-    return options[1] if len(options) > 1 else options[0]
-
-
 def confidence_note(pitch_name: str):
     return f" Confidence: {get_pitch_confidence_score(pitch_name)}."
 
@@ -268,36 +258,42 @@ def baseball_recommend_pitch(batter, balls, strikes, history):
 
     if balls == 0 and strikes == 0 and first_pitch_of_ab:
         if use_default and slot_num == 1:
-            pitch_name = best_available(["cutter", "2-seam", "4-seam"], history)
+            pitch_name = best_available(st.session_state.pitcher_pitches, history)
             return (
                 pitch_name,
                 baseball_location_for_pitch(pitch_name, handedness),
-                "Top of lineup default: get ahead with a safe strike."
+                "Top of lineup default: best available first-pitch strike based on rank/confidence."
                 + confidence_note(pitch_name),
             )
         if use_default and slot_num == 4 and "Fastball hunter" in tendencies:
             pitch_name = best_available(
-                ["slider", "sweeper", "curveball", "changeup"], history
+                ["slider", "sweeper", "curveball", "changeup", "cutter", "2-seam", "4-seam"],
+                history
             )
             return (
                 pitch_name,
                 baseball_location_for_pitch(pitch_name, handedness),
-                "Cleanup hitter: do not give a clean first fastball."
+                "Cleanup hitter: avoid a clean first-pitch fastball when possible."
                 + confidence_note(pitch_name),
             )
         if "Aggressive first pitch" in tendencies and "Fastball hunter" in tendencies:
-            pitch_name = best_available(["slider", "sweeper", "curveball"], history)
+            pitch_name = best_available(
+                ["slider", "sweeper", "curveball", "changeup", "cutter"],
+                history
+            )
             return (
                 pitch_name,
                 baseball_location_for_pitch(pitch_name, handedness),
-                "Aggressive fastball hunter: start with spin."
+                "Aggressive fastball hunter: start with spin or offspeed."
                 + confidence_note(pitch_name),
             )
-        pitch_name = best_available(["4-seam", "2-seam", "cutter"], history)
+
+        pitch_name = best_available(st.session_state.pitcher_pitches, history)
         return (
             pitch_name,
             baseball_location_for_pitch(pitch_name, handedness),
-            "Default baseball first pitch." + confidence_note(pitch_name),
+            "Default baseball first pitch: best available based on rank/confidence."
+            + confidence_note(pitch_name),
         )
 
     if strikes == 2:
@@ -451,14 +447,10 @@ def baseball_recommend_pitch(batter, balls, strikes, history):
         )
 
     pitch_name = best_available(
-        ["4-seam", "2-seam", "cutter"],
+        st.session_state.pitcher_pitches,
         history,
         avoid_last_ball_pitch=True,
     )
-    if pitch_name is None:
-        pitch_name = best_available(
-            st.session_state.pitcher_pitches, history, avoid_last_ball_pitch=True
-        )
     return (
         pitch_name,
         baseball_location_for_pitch(pitch_name, handedness),
@@ -476,16 +468,17 @@ def softball_recommend_pitch(batter, balls, strikes, history):
 
     if balls == 0 and strikes == 0 and first_pitch_of_ab:
         if use_default and slot_num == 1:
-            pitch_name = best_available(["curve", "screw", "drop"], history)
+            pitch_name = best_available(st.session_state.pitcher_pitches, history)
             return (
                 pitch_name,
                 softball_location_for_pitch(pitch_name, handedness),
-                "Top of lineup default: steal a strike with movement."
+                "Top of lineup default: best available first-pitch strike based on rank/confidence."
                 + confidence_note(pitch_name),
             )
         if use_default and slot_num == 4:
             pitch_name = best_available(
-                ["curve", "screw", "drop curve", "change"], history
+                ["curve", "screw", "drop curve", "change", "rise", "drop"],
+                history
             )
             return (
                 pitch_name,
@@ -495,18 +488,21 @@ def softball_recommend_pitch(batter, balls, strikes, history):
             )
         if "Aggressive first pitch" in tendencies and "Fastball hunter" in tendencies:
             pitch_name = best_available(
-                ["curve", "screw", "drop curve", "change"], history
+                ["curve", "screw", "drop curve", "change", "rise", "drop"],
+                history
             )
             return (
                 pitch_name,
                 softball_location_for_pitch(pitch_name, handedness),
                 "Aggressive hitter: start with movement." + confidence_note(pitch_name),
             )
-        pitch_name = best_available(["rise", "drop", "curve", "screw"], history)
+
+        pitch_name = best_available(st.session_state.pitcher_pitches, history)
         return (
             pitch_name,
             softball_location_for_pitch(pitch_name, handedness),
-            "Default softball first pitch." + confidence_note(pitch_name),
+            "Default softball first pitch: best available based on rank/confidence."
+            + confidence_note(pitch_name),
         )
 
     if strikes == 2:
@@ -676,14 +672,10 @@ def softball_recommend_pitch(batter, balls, strikes, history):
         )
 
     pitch_name = best_available(
-        ["rise", "drop", "curve", "screw", "change"],
+        st.session_state.pitcher_pitches,
         history,
         avoid_last_ball_pitch=True,
     )
-    if pitch_name is None:
-        pitch_name = best_available(
-            st.session_state.pitcher_pitches, history, avoid_last_ball_pitch=True
-        )
     return (
         pitch_name,
         softball_location_for_pitch(pitch_name, handedness),
