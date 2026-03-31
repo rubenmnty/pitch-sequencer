@@ -218,6 +218,7 @@ elif st.session_state.page == "lineup":
         reset_at_bat()
         st.session_state.page = "game"
         st.rerun()
+
 # -------------------------
 # GAME
 # -------------------------
@@ -466,4 +467,3 @@ elif st.session_state.page == "game":
                     st.write(f"- {item}")
             else:
                 st.write("No completed at-bats yet.")
-
