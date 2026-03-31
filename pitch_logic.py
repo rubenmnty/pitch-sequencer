@@ -49,11 +49,15 @@ def last_pitch_event(history):
     return events[-1]
 
 
-def last_pitch_name(history):
-    event = last_pitch_event(history)
-    if not event:
-        return None
-    return event["pitch"]
+def get_last_ball_quality(history):
+    for item in reversed(history):
+        if item == "Ball Quality | Competitive":
+            return "Competitive"
+        if item == "Ball Quality | Uncompetitive":
+            return "Uncompetitive"
+        if is_actual_pitch_event(item):
+            break
+    return None
 
 
 def consecutive_balls_for_pitch(pitch_name: str, history) -> int:
@@ -91,8 +95,12 @@ def pitch_score(pitch_name: str, history) -> int:
     score = confidence + rank_bonus
 
     same_pitch_balls = consecutive_balls_for_pitch(pitch_name, history)
-    if same_pitch_balls >= 1:
-        score -= 120
+    if same_pitch_balls == 1:
+        score -= 45
+    elif same_pitch_balls == 2:
+        score -= 90
+    elif same_pitch_balls >= 3:
+        score -= 140
 
     usage_count = recent_usage_count(pitch_name, history, window=4)
     score -= max(0, usage_count - 1) * 12
@@ -101,34 +109,31 @@ def pitch_score(pitch_name: str, history) -> int:
     if last_event:
         last_pitch = last_event["pitch"].strip().lower()
         last_outcome = last_event["outcome"].strip().lower()
+        last_quality = get_last_ball_quality(history)
 
         if last_pitch == pitch_name.strip().lower() and last_outcome == "ball":
-            score -= 150
+            if last_quality == "Uncompetitive":
+                score -= 200
+            elif last_quality == "Competitive":
+                score -= 60
+            else:
+                score -= 120
 
     return score
-
-
-def sort_candidates(candidates, history):
-    available = [p for p in candidates if pitch_available(p)]
-    if not available:
-        return []
-    return sorted(
-        available,
-        key=lambda p: (-pitch_score(p, history), get_pitch_rank(p), p),
-    )
 
 
 def best_available(candidates, history, avoid_last_ball_pitch=False):
     available = [p for p in candidates if pitch_available(p)]
     last_event = last_pitch_event(history)
+    last_quality = get_last_ball_quality(history)
 
     if avoid_last_ball_pitch and last_event and last_event["outcome"].strip().lower() == "ball":
         last_pitch = last_event["pitch"].strip().lower()
-        filtered = [p for p in available if p.strip().lower() != last_pitch]
-        if filtered:
-            available = filtered
-        else:
-            return None
+
+        if last_quality == "Uncompetitive":
+            filtered = [p for p in available if p.strip().lower() != last_pitch]
+            if filtered:
+                available = filtered
 
     if available:
         ordered = sorted(
@@ -140,11 +145,14 @@ def best_available(candidates, history, avoid_last_ball_pitch=False):
     if st.session_state.pitcher_pitches:
         fallback = st.session_state.pitcher_pitches[:]
 
-        if avoid_last_ball_pitch and last_event:
+        if avoid_last_ball_pitch and last_event and last_event["outcome"].strip().lower() == "ball":
             last_pitch = last_event["pitch"].strip().lower()
-            fallback_filtered = [p for p in fallback if p.strip().lower() != last_pitch]
-            if fallback_filtered:
-                fallback = fallback_filtered
+            if last_quality == "Uncompetitive":
+                fallback_filtered = [
+                    p for p in fallback if p.strip().lower() != last_pitch
+                ]
+                if fallback_filtered:
+                    fallback = fallback_filtered
 
         if fallback:
             ordered = sorted(
@@ -176,6 +184,26 @@ def baseball_location_for_pitch(pitch_name: str, batter_hand: str):
     return "middle away"
 
 
+def baseball_competitive_adjusted_location(pitch_name: str, batter_hand: str):
+    if pitch_name == "4-seam":
+        return "middle away" if batter_hand == "R" else "middle in"
+    if pitch_name == "2-seam":
+        return "low away" if batter_hand == "R" else "low in"
+    if pitch_name == "changeup":
+        return "bottom of zone"
+    if pitch_name == "curveball":
+        return "front-door strike" if batter_hand == "R" else "back-door strike"
+    if pitch_name == "cutter":
+        return "middle away" if batter_hand == "R" else "middle in"
+    if pitch_name == "splitter":
+        return "bottom of zone"
+    if pitch_name == "slider":
+        return "back-foot strike" if batter_hand == "R" else "back-door strike"
+    if pitch_name == "sweeper":
+        return "edge away"
+    return baseball_location_for_pitch(pitch_name, batter_hand)
+
+
 def softball_location_for_pitch(pitch_name: str, batter_hand: str):
     if pitch_name == "rise":
         return "up away" if batter_hand == "R" else "up in"
@@ -190,6 +218,22 @@ def softball_location_for_pitch(pitch_name: str, batter_hand: str):
     if pitch_name == "drop curve":
         return "down away" if batter_hand == "R" else "down in"
     return "middle"
+
+
+def softball_competitive_adjusted_location(pitch_name: str, batter_hand: str):
+    if pitch_name == "rise":
+        return "top of zone"
+    if pitch_name == "drop":
+        return "bottom of zone"
+    if pitch_name == "curve":
+        return "edge away"
+    if pitch_name == "screw":
+        return "edge in"
+    if pitch_name == "change":
+        return "bottom of zone"
+    if pitch_name == "drop curve":
+        return "low edge"
+    return softball_location_for_pitch(pitch_name, batter_hand)
 
 
 def confidence_note(pitch_name: str):
@@ -629,34 +673,54 @@ def softball_recommend_pitch(batter, balls, strikes, history):
     )
 
 
-def force_different_after_ball(pitch_name, history):
+def adjust_after_ball(pitch_name, location, reason, batter, history):
     last_event = last_pitch_event(history)
     if not last_event:
-        return pitch_name
+        return pitch_name, location, reason
 
     if last_event["outcome"].strip().lower() != "ball":
-        return pitch_name
+        return pitch_name, location, reason
 
     last_pitch = last_event["pitch"].strip().lower()
+    last_quality = get_last_ball_quality(history)
     current_pitch = pitch_name.strip().lower()
 
-    if current_pitch != last_pitch:
-        return pitch_name
+    # Uncompetitive ball = force a different pitch if possible
+    if last_quality == "Uncompetitive":
+        if current_pitch == last_pitch:
+            alternatives = [
+                p for p in st.session_state.pitcher_pitches
+                if p.strip().lower() != last_pitch
+            ]
+            if alternatives:
+                ordered = sorted(
+                    alternatives,
+                    key=lambda p: (-pitch_score(p, history), get_pitch_rank(p), p),
+                )
+                new_pitch = ordered[0]
+                if st.session_state.sport == "Baseball":
+                    new_location = baseball_location_for_pitch(new_pitch, batter["hand"])
+                else:
+                    new_location = softball_location_for_pitch(new_pitch, batter["hand"])
+                new_reason = reason + " Changed pitch after uncompetitive ball."
+                return new_pitch, new_location, new_reason
+        return pitch_name, location, reason
 
-    alternatives = [
-        p
-        for p in st.session_state.pitcher_pitches
-        if p.strip().lower() != last_pitch
-    ]
+    # Competitive ball = same pitch is allowed, but change the location
+    if last_quality == "Competitive":
+        if current_pitch == last_pitch:
+            if st.session_state.sport == "Baseball":
+                new_location = baseball_competitive_adjusted_location(
+                    pitch_name, batter["hand"]
+                )
+            else:
+                new_location = softball_competitive_adjusted_location(
+                    pitch_name, batter["hand"]
+                )
+            new_reason = reason + " Same pitch allowed after competitive ball, but moved location."
+            return pitch_name, new_location, new_reason
 
-    if not alternatives:
-        return pitch_name
-
-    ordered = sorted(
-        alternatives,
-        key=lambda p: (-pitch_score(p, history), get_pitch_rank(p), p),
-    )
-    return ordered[0]
+    return pitch_name, location, reason
 
 
 def recommend_pitch(batter, balls, strikes, history):
@@ -669,13 +733,8 @@ def recommend_pitch(batter, balls, strikes, history):
             batter, balls, strikes, history
         )
 
-    adjusted_pitch = force_different_after_ball(pitch_name, history)
+    pitch_name, location, reason = adjust_after_ball(
+        pitch_name, location, reason, batter, history
+    )
 
-    if adjusted_pitch != pitch_name:
-        if st.session_state.sport == "Baseball":
-            location = baseball_location_for_pitch(adjusted_pitch, batter["hand"])
-        else:
-            location = softball_location_for_pitch(adjusted_pitch, batter["hand"])
-        reason += " Adjusted to avoid repeating the same pitch after a ball."
-
-    return adjusted_pitch, location, reason
+    return pitch_name, location, reason
