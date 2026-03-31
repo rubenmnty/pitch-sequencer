@@ -127,7 +127,11 @@ def best_available(candidates, history, avoid_last_ball_pitch=False):
     last_event = last_pitch_event(history)
     last_quality = get_last_ball_quality(history)
 
-    if avoid_last_ball_pitch and last_event and last_event["outcome"].strip().lower() == "ball":
+    if (
+        avoid_last_ball_pitch
+        and last_event
+        and last_event["outcome"].strip().lower() == "ball"
+    ):
         last_pitch = last_event["pitch"].strip().lower()
 
         if last_quality == "Uncompetitive":
@@ -145,7 +149,11 @@ def best_available(candidates, history, avoid_last_ball_pitch=False):
     if st.session_state.pitcher_pitches:
         fallback = st.session_state.pitcher_pitches[:]
 
-        if avoid_last_ball_pitch and last_event and last_event["outcome"].strip().lower() == "ball":
+        if (
+            avoid_last_ball_pitch
+            and last_event
+            and last_event["outcome"].strip().lower() == "ball"
+        ):
             last_pitch = last_event["pitch"].strip().lower()
             if last_quality == "Uncompetitive":
                 fallback_filtered = [
@@ -184,24 +192,29 @@ def baseball_location_for_pitch(pitch_name: str, batter_hand: str):
     return "middle away"
 
 
-def baseball_competitive_adjusted_location(pitch_name: str, batter_hand: str):
+def baseball_alternate_locations(pitch_name: str, batter_hand: str):
     if pitch_name == "4-seam":
-        return "middle away" if batter_hand == "R" else "middle in"
+        return ["up away", "middle away", "up in", "top of zone"]
     if pitch_name == "2-seam":
-        return "low away" if batter_hand == "R" else "low in"
+        return ["middle in", "low in", "middle away", "low away"]
     if pitch_name == "changeup":
-        return "bottom of zone"
+        return ["low away", "bottom of zone", "low in"]
     if pitch_name == "curveball":
-        return "front-door strike" if batter_hand == "R" else "back-door strike"
+        return ["down away", "bottom of zone", "down in"]
     if pitch_name == "cutter":
-        return "middle away" if batter_hand == "R" else "middle in"
+        return ["middle in", "middle away", "low away", "up in"]
     if pitch_name == "splitter":
-        return "bottom of zone"
+        return ["down out of zone", "bottom of zone", "low away"]
     if pitch_name == "slider":
-        return "back-foot strike" if batter_hand == "R" else "back-door strike"
+        return ["down away off plate", "back foot", "front door"]
     if pitch_name == "sweeper":
-        return "edge away"
-    return baseball_location_for_pitch(pitch_name, batter_hand)
+        return ["away off plate", "edge away", "back door"]
+    return [baseball_location_for_pitch(pitch_name, batter_hand)]
+
+
+def baseball_competitive_adjusted_location(pitch_name: str, batter_hand: str):
+    options = baseball_alternate_locations(pitch_name, batter_hand)
+    return options[1] if len(options) > 1 else options[0]
 
 
 def softball_location_for_pitch(pitch_name: str, batter_hand: str):
@@ -220,20 +233,25 @@ def softball_location_for_pitch(pitch_name: str, batter_hand: str):
     return "middle"
 
 
-def softball_competitive_adjusted_location(pitch_name: str, batter_hand: str):
+def softball_alternate_locations(pitch_name: str, batter_hand: str):
     if pitch_name == "rise":
-        return "top of zone"
+        return ["up away", "top of zone", "up in"]
     if pitch_name == "drop":
-        return "bottom of zone"
+        return ["down in zone", "bottom of zone", "low edge"]
     if pitch_name == "curve":
-        return "edge away"
+        return ["away", "edge away", "inside"]
     if pitch_name == "screw":
-        return "edge in"
+        return ["inside", "edge in", "away"]
     if pitch_name == "change":
-        return "bottom of zone"
+        return ["down", "bottom of zone", "low edge"]
     if pitch_name == "drop curve":
-        return "low edge"
-    return softball_location_for_pitch(pitch_name, batter_hand)
+        return ["down away", "low edge", "down in"]
+    return [softball_location_for_pitch(pitch_name, batter_hand)]
+
+
+def softball_competitive_adjusted_location(pitch_name: str, batter_hand: str):
+    options = softball_alternate_locations(pitch_name, batter_hand)
+    return options[1] if len(options) > 1 else options[0]
 
 
 def confidence_note(pitch_name: str):
@@ -682,43 +700,61 @@ def adjust_after_ball(pitch_name, location, reason, batter, history):
         return pitch_name, location, reason
 
     last_pitch = last_event["pitch"].strip().lower()
+    last_location = last_event["location"].strip().lower()
     last_quality = get_last_ball_quality(history)
     current_pitch = pitch_name.strip().lower()
 
-    # Uncompetitive ball = force a different pitch if possible
     if last_quality == "Uncompetitive":
         if current_pitch == last_pitch:
             alternatives = [
                 p for p in st.session_state.pitcher_pitches
                 if p.strip().lower() != last_pitch
             ]
+
             if alternatives:
                 ordered = sorted(
                     alternatives,
                     key=lambda p: (-pitch_score(p, history), get_pitch_rank(p), p),
                 )
                 new_pitch = ordered[0]
+
                 if st.session_state.sport == "Baseball":
                     new_location = baseball_location_for_pitch(new_pitch, batter["hand"])
                 else:
                     new_location = softball_location_for_pitch(new_pitch, batter["hand"])
+
                 new_reason = reason + " Changed pitch after uncompetitive ball."
                 return new_pitch, new_location, new_reason
+
+            if st.session_state.sport == "Baseball":
+                options = baseball_alternate_locations(pitch_name, batter["hand"])
+            else:
+                options = softball_alternate_locations(pitch_name, batter["hand"])
+
+            for loc in options:
+                if loc.strip().lower() != last_location:
+                    return (
+                        pitch_name,
+                        loc,
+                        reason + " Same pitch kept because no better option, but moved location after uncompetitive ball.",
+                    )
+
         return pitch_name, location, reason
 
-    # Competitive ball = same pitch is allowed, but change the location
     if last_quality == "Competitive":
         if current_pitch == last_pitch:
             if st.session_state.sport == "Baseball":
-                new_location = baseball_competitive_adjusted_location(
-                    pitch_name, batter["hand"]
-                )
+                options = baseball_alternate_locations(pitch_name, batter["hand"])
             else:
-                new_location = softball_competitive_adjusted_location(
-                    pitch_name, batter["hand"]
-                )
-            new_reason = reason + " Same pitch allowed after competitive ball, but moved location."
-            return pitch_name, new_location, new_reason
+                options = softball_alternate_locations(pitch_name, batter["hand"])
+
+            for loc in options:
+                if loc.strip().lower() != last_location:
+                    return (
+                        pitch_name,
+                        loc,
+                        reason + " Same pitch allowed after competitive ball, but moved location.",
+                    )
 
     return pitch_name, location, reason
 
