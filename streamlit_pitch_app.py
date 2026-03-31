@@ -218,7 +218,6 @@ elif st.session_state.page == "lineup":
         reset_at_bat()
         st.session_state.page = "game"
         st.rerun()
-
 # -------------------------
 # GAME
 # -------------------------
@@ -306,6 +305,7 @@ elif st.session_state.page == "game":
                 st.session_state.strikes += 1
                 record_pitch_line(pitch, location, "Called Strike")
                 update_pitch_confidence(pitch, 4)
+                st.session_state.pending_pitch = None
                 auto_check_count_end_local()
                 st.rerun()
 
@@ -317,6 +317,7 @@ elif st.session_state.page == "game":
                 record_pitch_line(pitch, location, "Swing Miss")
                 update_pitch_confidence(pitch, 8)
                 if auto_check_count_end_local():
+                    st.session_state.pending_pitch = None
                     st.rerun()
                 st.session_state.pending_result = "Swing Miss"
                 st.session_state.stage = "swing_details"
@@ -347,6 +348,7 @@ elif st.session_state.page == "game":
                 location = st.session_state.pending_pitch["location"]
                 record_pitch_line(pitch, location, "HBP")
                 update_pitch_confidence(pitch, -6)
+                st.session_state.pending_pitch = None
                 end_at_bat("Hit By Pitch")
                 st.rerun()
 
@@ -383,6 +385,7 @@ elif st.session_state.page == "game":
 
                 st.session_state.pending_result = None
                 st.session_state.stage = "result"
+                st.session_state.pending_pitch = None
                 auto_check_count_end_local()
                 st.rerun()
 
@@ -409,6 +412,7 @@ elif st.session_state.page == "game":
                 )
                 st.session_state.pending_result = None
                 st.session_state.stage = "result"
+                st.session_state.pending_pitch = None
                 st.rerun()
 
         elif st.session_state.stage == "in_play":
@@ -436,6 +440,8 @@ elif st.session_state.page == "game":
 
                 if play_result == "Out":
                     add_out_local()
+
+                st.session_state.pending_pitch = None
                 end_at_bat(play_text)
                 st.rerun()
 
@@ -460,3 +466,4 @@ elif st.session_state.page == "game":
                     st.write(f"- {item}")
             else:
                 st.write("No completed at-bats yet.")
+
