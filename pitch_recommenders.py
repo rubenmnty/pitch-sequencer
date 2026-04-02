@@ -29,13 +29,36 @@ def pitch_family(pitch_name: str) -> str:
     if name in {"4-seam", "2-seam", "cutter", "rise"}:
         return "hard"
 
-    if name in {"curveball", "slider", "sweeper", "curve", "screw", "drop curve", "drop"}:
+    if name in {
+        "curveball",
+        "slider",
+        "sweeper",
+        "curve",
+        "screw",
+        "drop curve",
+        "drop",
+    }:
         return "breaking"
 
     if name in {"changeup", "splitter", "change"}:
         return "offspeed"
 
     return "other"
+
+
+def pitch_intent(pitch_name: str) -> str:
+    name = pitch_name.strip().lower()
+
+    if name in {"4-seam", "2-seam", "cutter", "rise", "drop"}:
+        return "compete"
+
+    if name in {"curveball", "curve", "changeup", "change", "2-seam", "cutter"}:
+        return "steal"
+
+    if name in {"slider", "sweeper", "splitter", "curveball", "drop curve"}:
+        return "expand"
+
+    return "neutral"
 
 
 def recent_family_counts(history, window: int = 5):
@@ -49,9 +72,22 @@ def recent_family_counts(history, window: int = 5):
     return counts
 
 
+def recent_intent_counts(history, window: int = 4):
+    events = get_recent_pitch_events(history)[-window:]
+    counts = {"steal": 0, "compete": 0, "expand": 0, "neutral": 0}
+
+    for event in events:
+        intent = pitch_intent(event["pitch"])
+        counts[intent] = counts.get(intent, 0) + 1
+
+    return counts
+
+
 def get_count_mode(balls: int, strikes: int) -> str:
-    if strikes == 2:
+    if strikes == 2 and balls <= 1:
         return "putaway"
+    if strikes == 2:
+        return "protect_finish"
     if balls >= 3 and strikes <= 1:
         return "must_strike"
     if balls > strikes:
@@ -59,21 +95,46 @@ def get_count_mode(balls: int, strikes: int) -> str:
     if strikes > balls:
         return "expand"
     if balls == 0 and strikes == 0:
-        return "steal_strike"
+        return "opener"
+    if balls == 1 and strikes == 1:
+        return "balance"
+    if balls == 2 and strikes == 2:
+        return "full_mix"
     return "neutral"
 
 
-def choose_by_mode(candidates, history, mode: str):
+def get_at_bat_phase(history) -> str:
+    pitch_count = len(get_recent_pitch_events(history))
+
+    if pitch_count == 0:
+        return "opening"
+    if pitch_count == 1:
+        return "second_pitch"
+    if pitch_count in {2, 3}:
+        return "middle"
+    return "finish"
+
+
+def choose_by_mode(candidates, history, mode: str, phase: str):
     if not candidates:
         return None
 
     family_counts = recent_family_counts(history, window=5)
+    intent_counts = recent_intent_counts(history, window=4)
+    last_event = last_pitch_event(history)
+    last_pitch = last_event["pitch"].strip().lower() if last_event else None
+    last_family = pitch_family(last_pitch) if last_pitch else None
+    last_intent = pitch_intent(last_pitch) if last_pitch else None
 
     adjusted = []
-    for pitch in candidates:
-        score = pitch_score(pitch, history)
-        family = pitch_family(pitch)
 
+    for pitch in candidates:
+        name = pitch.strip().lower()
+        family = pitch_family(pitch)
+        intent = pitch_intent(pitch)
+        score = pitch_score(pitch, history)
+
+        # mix penalties
         if family == "hard":
             score -= family_counts["hard"] * 8
         elif family == "breaking":
@@ -81,35 +142,92 @@ def choose_by_mode(candidates, history, mode: str):
         elif family == "offspeed":
             score -= family_counts["offspeed"] * 4
 
-        if mode == "steal_strike":
-            if family == "hard":
+        # same intent penalty
+        score -= intent_counts.get(intent, 0) * 5
+
+        # avoid same family back-to-back too often
+        if last_family and family == last_family:
+            score -= 12
+
+        # avoid same intent back-to-back too often
+        if last_intent and intent == last_intent:
+            score -= 10
+
+        # MODE
+        if mode == "opener":
+            if intent == "steal":
+                score += 15
+            if name in {"slider", "sweeper", "splitter"}:
+                score -= 10
+            if name in {"curveball", "curve", "changeup", "cutter", "2-seam"}:
                 score += 8
-            if pitch.strip().lower() in {"curveball", "curve", "drop", "drop curve"}:
-                score += 6
 
         elif mode == "must_strike":
-            if family == "hard":
-                score += 6
-            if pitch.strip().lower() in {"splitter", "slider", "sweeper"}:
-                score -= 10
+            if intent == "compete":
+                score += 16
+            if name in {"slider", "sweeper", "splitter"}:
+                score -= 14
 
         elif mode == "behind":
-            if pitch.strip().lower() in {"cutter", "2-seam", "changeup", "drop", "curve"}:
+            if intent == "compete":
+                score += 12
+            if name in {"changeup", "curveball", "curve", "cutter", "2-seam", "drop"}:
                 score += 6
-            if pitch.strip().lower() in {"sweeper", "slider", "curveball", "splitter"}:
-                score -= 4
+            if intent == "expand":
+                score -= 8
 
         elif mode == "expand":
-            if family in {"breaking", "offspeed"}:
-                score += 10
+            if intent == "expand":
+                score += 14
             if family == "hard":
                 score -= 8
 
         elif mode == "putaway":
-            if family in {"breaking", "offspeed"}:
-                score += 14
+            if intent == "expand":
+                score += 18
             if family == "hard":
+                score -= 12
+
+        elif mode == "protect_finish":
+            if intent == "expand":
+                score += 10
+            if intent == "compete":
+                score += 5
+
+        elif mode == "balance":
+            if intent == "compete":
+                score += 6
+            if intent == "steal":
+                score += 5
+            if intent == "expand":
+                score += 2
+
+        elif mode == "full_mix":
+            if family in {"breaking", "offspeed"}:
+                score += 10
+            if intent == "compete":
+                score += 4
+
+        # PHASE
+        if phase == "opening":
+            if intent == "steal":
+                score += 12
+            if intent == "expand":
                 score -= 10
+
+        elif phase == "second_pitch":
+            if last_family == "hard" and family in {"breaking", "offspeed"}:
+                score += 14
+            if last_family in {"breaking", "offspeed"} and family == "hard":
+                score += 10
+
+        elif phase == "middle":
+            if last_family == family:
+                score -= 8
+
+        elif phase == "finish":
+            if intent == "expand":
+                score += 10
 
         adjusted.append((pitch, score))
 
@@ -123,6 +241,7 @@ def baseball_recommend_pitch(batter, balls, strikes, history):
     slot_num = batter["slot_num"]
     use_default = "Default to lineup spot" in tendencies
     mode = get_count_mode(balls, strikes)
+    phase = get_at_bat_phase(history)
 
     actual_events = get_recent_pitch_events(history)
     first_pitch_of_ab = len(actual_events) == 0
@@ -131,62 +250,71 @@ def baseball_recommend_pitch(batter, balls, strikes, history):
     last_pitch = last_event["pitch"].strip().lower() if last_event else None
     last_location = last_event["location"].strip().lower() if last_event else ""
 
-    # 0-0 first pitch
+    # FIRST PITCH / OPENER
     if balls == 0 and strikes == 0 and first_pitch_of_ab:
         if use_default and slot_num == 4 and "Fastball hunter" in tendencies:
             candidates = [
-                p for p in [
+                p
+                for p in [
                     "curveball",
-                    "splitter",
-                    "slider",
                     "changeup",
-                    "sweeper",
                     "cutter",
                     "2-seam",
+                    "slider",
+                    "splitter",
+                    "sweeper",
                     "4-seam",
                 ]
                 if p in st.session_state.pitcher_pitches
             ]
-            pitch_name = choose_by_mode(candidates, history, "steal_strike")
+            pitch_name = choose_by_mode(candidates, history, "opener", "opening")
             return (
                 pitch_name,
                 next_location_for_pitch(pitch_name, handedness, history),
-                "Cleanup hitter: avoid a clean first-pitch fastball when possible."
+                "Cleanup hitter opener: avoid giving a clean first-pitch heater."
                 + confidence_note(pitch_name),
             )
 
         if "Aggressive first pitch" in tendencies and "Fastball hunter" in tendencies:
             candidates = [
-                p for p in [
+                p
+                for p in [
                     "curveball",
-                    "splitter",
-                    "slider",
                     "changeup",
-                    "sweeper",
                     "cutter",
                     "2-seam",
+                    "slider",
+                    "splitter",
+                    "sweeper",
                     "4-seam",
                 ]
                 if p in st.session_state.pitcher_pitches
             ]
-            pitch_name = choose_by_mode(candidates, history, "steal_strike")
+            pitch_name = choose_by_mode(candidates, history, "opener", "opening")
             return (
                 pitch_name,
                 next_location_for_pitch(pitch_name, handedness, history),
-                "Aggressive fastball hunter: start with spin or offspeed."
+                "Aggressive first-pitch hunter: start with an opener, not just best raw pitch."
                 + confidence_note(pitch_name),
             )
 
-        candidates = [p for p in st.session_state.pitcher_pitches]
-        pitch_name = choose_by_mode(candidates, history, "steal_strike")
+        candidates = [
+            p
+            for p in ["cutter", "2-seam", "curveball", "changeup", "4-seam"]
+            if p in st.session_state.pitcher_pitches
+        ]
+        if not candidates:
+            candidates = st.session_state.pitcher_pitches
+
+        pitch_name = choose_by_mode(candidates, history, "opener", "opening")
         return (
             pitch_name,
             next_location_for_pitch(pitch_name, handedness, history),
-            "First pitch: best available based on rank, confidence, and mix."
+            "First pitch opener: best opening pitch for the at-bat, not just best overall pitch."
             + confidence_note(pitch_name),
         )
 
-    # 2-strike logic
+    # TWO STRIKES
     if strikes == 2:
         if "Chases high fastball" in tendencies and "4-seam" in st.session_state.pitcher_pitches:
             return (
@@ -200,7 +328,7 @@ def baseball_recommend_pitch(batter, balls, strikes, history):
                 p for p in ["splitter", "changeup", "curveball"]
                 if p in st.session_state.pitcher_pitches
             ]
-            pitch_name = choose_by_mode(candidates, history, "putaway")
+            pitch_name = choose_by_mode(candidates, history, "putaway", "finish")
             if pitch_name:
                 return (
                     pitch_name,
@@ -212,7 +340,7 @@ def baseball_recommend_pitch(batter, balls, strikes, history):
             candidates = [
                 p for p in ["sweeper", "slider"] if p in st.session_state.pitcher_pitches
             ]
-            pitch_name = choose_by_mode(candidates, history, "putaway")
+            pitch_name = choose_by_mode(candidates, history, "putaway", "finish")
             if pitch_name:
                 return (
                     pitch_name,
@@ -224,48 +352,49 @@ def baseball_recommend_pitch(batter, balls, strikes, history):
             p for p in ["slider", "sweeper", "splitter", "curveball", "changeup"]
             if p in st.session_state.pitcher_pitches
         ]
-        pitch_name = choose_by_mode(candidates, history, "putaway")
+        pitch_name = choose_by_mode(candidates, history, mode, phase)
         if pitch_name is None:
-            pitch_name = choose_by_mode(st.session_state.pitcher_pitches, history, "putaway")
+            pitch_name = choose_by_mode(st.session_state.pitcher_pitches, history, mode, phase)
 
         return (
             pitch_name,
             next_location_for_pitch(pitch_name, handedness, history),
-            "Two-strike chase pitch." + confidence_note(pitch_name),
+            "Two-strike finish pitch." + confidence_note(pitch_name),
         )
 
-    # hitter counts
+    # HITTER COUNT
     if balls > strikes:
         candidates = [
-            p for p in ["cutter", "2-seam", "changeup", "curveball", "4-seam", "splitter"]
+            p
+            for p in ["cutter", "2-seam", "changeup", "curveball", "4-seam", "splitter"]
             if p in st.session_state.pitcher_pitches
         ]
-        pitch_name = choose_by_mode(candidates, history, "behind")
+        pitch_name = choose_by_mode(candidates, history, mode, phase)
         if pitch_name is None:
-            pitch_name = choose_by_mode(st.session_state.pitcher_pitches, history, "behind")
+            pitch_name = choose_by_mode(st.session_state.pitcher_pitches, history, mode, phase)
 
         return (
             pitch_name,
             next_location_for_pitch(
                 pitch_name, handedness, history, competitive_mode=True
             ),
-            "Hitter count: best competitive option with command and mix in mind."
+            "Behind in count: choose a true compete pitch with command and mix in mind."
             + confidence_note(pitch_name),
         )
 
-    # sequence logic off previous pitch
+    # SEQUENCE / PLAN LOGIC
     if last_pitch == "4-seam" and "up" in last_location:
         candidates = [
             p for p in ["splitter", "changeup", "curveball", "slider"]
             if p in st.session_state.pitcher_pitches
         ]
-        pitch_name = choose_by_mode(candidates, history, "expand")
+        pitch_name = choose_by_mode(candidates, history, "expand", "middle")
         if pitch_name is None:
-            pitch_name = choose_by_mode(st.session_state.pitcher_pitches, history, "expand")
+            pitch_name = choose_by_mode(st.session_state.pitcher_pitches, history, "expand", "middle")
         return (
             pitch_name,
             next_location_for_pitch(pitch_name, handedness, history),
-            "Fastball up before: now change eye level and/or speed."
+            "Fastball up before: now change eye level and speed."
             + confidence_note(pitch_name),
         )
 
@@ -277,14 +406,14 @@ def baseball_recommend_pitch(batter, balls, strikes, history):
         if not candidates:
             candidates = [p for p in st.session_state.pitcher_pitches if p != last_pitch]
 
-        pitch_name = choose_by_mode(candidates, history, "neutral")
+        pitch_name = choose_by_mode(candidates, history, "neutral", "middle")
         if pitch_name is None:
-            pitch_name = choose_by_mode(st.session_state.pitcher_pitches, history, "neutral")
+            pitch_name = choose_by_mode(st.session_state.pitcher_pitches, history, "neutral", "middle")
 
         return (
             pitch_name,
             next_location_for_pitch(pitch_name, handedness, history),
-            "After a hard pitch, prefer shape or speed change."
+            "After a hard pitch, prefer a real speed or shape change."
             + confidence_note(pitch_name),
         )
 
@@ -293,14 +422,14 @@ def baseball_recommend_pitch(batter, balls, strikes, history):
             p for p in ["4-seam", "2-seam", "changeup", "splitter", "cutter"]
             if p in st.session_state.pitcher_pitches
         ]
-        pitch_name = choose_by_mode(candidates, history, "neutral")
+        pitch_name = choose_by_mode(candidates, history, "balance", "middle")
         if pitch_name is None:
-            pitch_name = choose_by_mode(st.session_state.pitcher_pitches, history, "neutral")
+            pitch_name = choose_by_mode(st.session_state.pitcher_pitches, history, "balance", "middle")
 
         return (
             pitch_name,
             next_location_for_pitch(pitch_name, handedness, history),
-            "After breaking ball, change speed or lane."
+            "After breaking ball, change speed, lane, or eye level."
             + confidence_note(pitch_name),
         )
 
@@ -309,9 +438,9 @@ def baseball_recommend_pitch(batter, balls, strikes, history):
             p for p in ["4-seam", "cutter", "curveball", "2-seam"]
             if p in st.session_state.pitcher_pitches
         ]
-        pitch_name = choose_by_mode(candidates, history, "neutral")
+        pitch_name = choose_by_mode(candidates, history, "balance", "middle")
         if pitch_name is None:
-            pitch_name = choose_by_mode(st.session_state.pitcher_pitches, history, "neutral")
+            pitch_name = choose_by_mode(st.session_state.pitcher_pitches, history, "balance", "middle")
 
         return (
             pitch_name,
@@ -320,11 +449,11 @@ def baseball_recommend_pitch(batter, balls, strikes, history):
             + confidence_note(pitch_name),
         )
 
-    pitch_name = choose_by_mode(st.session_state.pitcher_pitches, history, mode)
+    pitch_name = choose_by_mode(st.session_state.pitcher_pitches, history, mode, phase)
     return (
         pitch_name,
         next_location_for_pitch(pitch_name, handedness, history),
-        "Default baseball sequence: best score that still fits the count and mix."
+        "Default baseball sequence: best pitch that fits count, phase, and mix."
         + confidence_note(pitch_name),
     )
 
@@ -335,6 +464,7 @@ def softball_recommend_pitch(batter, balls, strikes, history):
     slot_num = batter["slot_num"]
     use_default = "Default to lineup spot" in tendencies
     mode = get_count_mode(balls, strikes)
+    phase = get_at_bat_phase(history)
 
     actual_events = get_recent_pitch_events(history)
     first_pitch_of_ab = len(actual_events) == 0
@@ -347,11 +477,11 @@ def softball_recommend_pitch(batter, balls, strikes, history):
                 p for p in ["curve", "screw", "drop curve", "change", "rise", "drop"]
                 if p in st.session_state.pitcher_pitches
             ]
-            pitch_name = choose_by_mode(candidates, history, "steal_strike")
+            pitch_name = choose_by_mode(candidates, history, "opener", "opening")
             return (
                 pitch_name,
                 next_location_for_pitch(pitch_name, handedness, history),
-                "Middle of lineup default: avoid giving a clean first look."
+                "Middle of lineup opener: avoid a clean first look."
                 + confidence_note(pitch_name),
             )
 
@@ -360,18 +490,26 @@ def softball_recommend_pitch(batter, balls, strikes, history):
                 p for p in ["curve", "screw", "drop curve", "change", "rise", "drop"]
                 if p in st.session_state.pitcher_pitches
             ]
-            pitch_name = choose_by_mode(candidates, history, "steal_strike")
+            pitch_name = choose_by_mode(candidates, history, "opener", "opening")
             return (
                 pitch_name,
                 next_location_for_pitch(pitch_name, handedness, history),
-                "Aggressive hitter: start with movement." + confidence_note(pitch_name),
+                "Aggressive hitter: start with opener logic, not just best pitch."
+                + confidence_note(pitch_name),
             )
 
-        pitch_name = choose_by_mode(st.session_state.pitcher_pitches, history, "steal_strike")
+        candidates = [
+            p for p in ["drop", "curve", "change", "rise", "screw", "drop curve"]
+            if p in st.session_state.pitcher_pitches
+        ]
+        if not candidates:
+            candidates = st.session_state.pitcher_pitches
+
+        pitch_name = choose_by_mode(candidates, history, "opener", "opening")
         return (
             pitch_name,
             next_location_for_pitch(pitch_name, handedness, history),
-            "First pitch: best available based on rank, confidence, and mix."
+            "First pitch opener: best opening pitch for the at-bat."
             + confidence_note(pitch_name),
         )
 
@@ -380,14 +518,14 @@ def softball_recommend_pitch(batter, balls, strikes, history):
             p for p in ["drop curve", "drop", "curve", "screw", "change", "rise"]
             if p in st.session_state.pitcher_pitches
         ]
-        pitch_name = choose_by_mode(candidates, history, "putaway")
+        pitch_name = choose_by_mode(candidates, history, "putaway", "finish")
         if pitch_name is None:
-            pitch_name = choose_by_mode(st.session_state.pitcher_pitches, history, "putaway")
+            pitch_name = choose_by_mode(st.session_state.pitcher_pitches, history, "putaway", "finish")
 
         return (
             pitch_name,
             next_location_for_pitch(pitch_name, handedness, history),
-            "Two-strike softball chase pitch." + confidence_note(pitch_name),
+            "Two-strike softball finish pitch." + confidence_note(pitch_name),
         )
 
     if balls > strikes:
@@ -395,16 +533,16 @@ def softball_recommend_pitch(batter, balls, strikes, history):
             p for p in ["drop", "curve", "screw", "rise", "change"]
             if p in st.session_state.pitcher_pitches
         ]
-        pitch_name = choose_by_mode(candidates, history, "behind")
+        pitch_name = choose_by_mode(candidates, history, "behind", "middle")
         if pitch_name is None:
-            pitch_name = choose_by_mode(st.session_state.pitcher_pitches, history, "behind")
+            pitch_name = choose_by_mode(st.session_state.pitcher_pitches, history, "behind", "middle")
 
         return (
             pitch_name,
             next_location_for_pitch(
                 pitch_name, handedness, history, competitive_mode=True
             ),
-            "Hitter count: safe movement strike with better mix control."
+            "Behind in count: choose a true compete pitch with better mix control."
             + confidence_note(pitch_name),
         )
 
@@ -413,9 +551,9 @@ def softball_recommend_pitch(batter, balls, strikes, history):
             p for p in ["drop", "drop curve", "change"]
             if p in st.session_state.pitcher_pitches
         ]
-        pitch_name = choose_by_mode(candidates, history, "neutral")
+        pitch_name = choose_by_mode(candidates, history, "neutral", "middle")
         if pitch_name is None:
-            pitch_name = choose_by_mode(st.session_state.pitcher_pitches, history, "neutral")
+            pitch_name = choose_by_mode(st.session_state.pitcher_pitches, history, "neutral", "middle")
 
         return (
             pitch_name,
@@ -425,9 +563,9 @@ def softball_recommend_pitch(batter, balls, strikes, history):
 
     if last_pitch in {"drop", "drop curve", "curve", "screw", "change"}:
         candidates = [p for p in st.session_state.pitcher_pitches if p != last_pitch]
-        pitch_name = choose_by_mode(candidates, history, "neutral")
+        pitch_name = choose_by_mode(candidates, history, "balance", "middle")
         if pitch_name is None:
-            pitch_name = choose_by_mode(st.session_state.pitcher_pitches, history, "neutral")
+            pitch_name = choose_by_mode(st.session_state.pitcher_pitches, history, "balance", "middle")
 
         return (
             pitch_name,
@@ -436,11 +574,11 @@ def softball_recommend_pitch(batter, balls, strikes, history):
             + confidence_note(pitch_name),
         )
 
-    pitch_name = choose_by_mode(st.session_state.pitcher_pitches, history, mode)
+    pitch_name = choose_by_mode(st.session_state.pitcher_pitches, history, mode, phase)
     return (
         pitch_name,
         next_location_for_pitch(pitch_name, handedness, history),
-        "Default softball sequence: best score that still fits count and mix."
+        "Default softball sequence: best pitch that fits count, phase, and mix."
         + confidence_note(pitch_name),
     )
 
@@ -523,3 +661,4 @@ def recommend_pitch(batter, balls, strikes, history):
     )
 
     return pitch_name, location, reason
+Edit it
