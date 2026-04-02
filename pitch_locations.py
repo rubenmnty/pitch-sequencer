@@ -1,6 +1,6 @@
 import streamlit as st
 
-from pitch_history import get_recent_pitch_events, last_location_for_pitch
+from pitch_history import get_recent_pitch_events, last_location_for_pitch, last_pitch_event
 
 
 def baseball_location_for_pitch(pitch_name: str, batter_hand: str):
@@ -134,6 +134,73 @@ def count_matching_bands(locations, target_band, band_func):
     return sum(1 for loc in locations if band_func(loc) == target_band)
 
 
+def get_last_pitch_and_location(history):
+    event = last_pitch_event(history)
+    if not event:
+        return None, None
+    return event["pitch"].strip().lower(), event["location"].strip().lower()
+
+
+def get_pitch_family_for_location_logic(pitch_name: str) -> str:
+    name = pitch_name.strip().lower()
+
+    if name in {"4-seam", "2-seam", "cutter", "rise"}:
+        return "hard"
+    if name in {
+        "curveball",
+        "slider",
+        "sweeper",
+        "curve",
+        "screw",
+        "drop curve",
+        "drop",
+    }:
+        return "breaking"
+    if name in {"changeup", "splitter", "change"}:
+        return "offspeed"
+    return "other"
+
+
+def apply_sequence_bias(score, current_loc, last_pitch, last_location, current_pitch):
+    current_height = location_band(current_loc)
+    current_side = side_band(current_loc)
+    current_family = get_pitch_family_for_location_logic(current_pitch)
+    last_family = (
+        get_pitch_family_for_location_logic(last_pitch) if last_pitch else None
+    )
+    last_height = location_band(last_location) if last_location else None
+    last_side = side_band(last_location) if last_location else None
+
+    if not last_pitch or not last_location:
+        return score
+
+    # Change eye level after an up pitch
+    if last_height == "up" and current_height == "down":
+        score += 16
+    elif last_height == "down" and current_height == "up":
+        score += 10
+
+    # Reward side change
+    if last_side in {"in", "away"} and current_side in {"in", "away"} and current_side != last_side:
+        score += 8
+
+    # Avoid same height/side combo too much
+    if current_height == last_height:
+        score -= 8
+    if current_side == last_side and current_side != "middle":
+        score -= 6
+
+    # Hard -> soft/breaking is good
+    if last_family == "hard" and current_family in {"breaking", "offspeed"}:
+        score += 14
+
+    # Breaking/offspeed -> hard can be good too
+    if last_family in {"breaking", "offspeed"} and current_family == "hard":
+        score += 10
+
+    return score
+
+
 def next_location_for_pitch(
     pitch_name: str, batter_hand: str, history, competitive_mode=False
 ):
@@ -144,6 +211,7 @@ def next_location_for_pitch(
 
     last_same_pitch_loc = last_location_for_pitch(pitch_name, history)
     recent_locations = get_recent_locations(history, window=4)
+    last_pitch, last_location = get_last_pitch_and_location(history)
 
     scored_options = []
 
@@ -151,32 +219,44 @@ def next_location_for_pitch(
         score = 0
         loc_clean = loc.strip().lower()
 
+        # Don't repeat same pitch same location
         if loc_clean == (last_same_pitch_loc or ""):
             score -= 100
 
+        # Don't spam exact location recently
         same_exact_recent = recent_locations.count(loc_clean)
         score -= same_exact_recent * 30
 
         height = location_band(loc_clean)
         side = side_band(loc_clean)
 
+        # Anti-lane spam
         score -= count_matching_bands(recent_locations, height, location_band) * 8
         score -= count_matching_bands(recent_locations, side, side_band) * 6
 
+        # Sequence-aware location logic
+        score = apply_sequence_bias(
+            score,
+            loc_clean,
+            last_pitch,
+            last_location,
+            pitch_name,
+        )
+
         if competitive_mode:
             if idx == 0:
-                score += 6
+                score += 8
             elif idx == 1:
-                score += 10
+                score += 12
             elif idx == 2:
-                score += 4
+                score += 5
             else:
                 score -= 2
         else:
             if idx == 0:
                 score += 4
             elif idx == 1:
-                score += 6
+                score += 7
             else:
                 score += 2
 
