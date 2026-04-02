@@ -7,6 +7,7 @@ from pitch_history import (
     consecutive_usage_for_pitch,
     recent_usage_count,
     recent_hard_pitch_count,
+    get_recent_pitch_events,
 )
 
 
@@ -45,33 +46,13 @@ def get_pitch_family(name: str) -> str:
 
 
 def recent_family_count(family: str, history, window: int = 5) -> int:
-    pitch_to_family = {
-        "4-seam": "hard",
-        "2-seam": "hard",
-        "cutter": "hard",
-        "rise": "hard",
-        "curveball": "breaking",
-        "slider": "breaking",
-        "sweeper": "breaking",
-        "curve": "breaking",
-        "screw": "breaking",
-        "drop curve": "breaking",
-        "drop": "breaking",
-        "changeup": "offspeed",
-        "splitter": "offspeed",
-        "change": "offspeed",
-    }
-
-    events = [
-        item for item in st.session_state.ab_history
-        if " | " in item and not item.startswith("Ball Quality |")
-    ][-window:]
-
+    events = get_recent_pitch_events(history)[-window:]
     count = 0
+
     for event in events:
-        pitch = event.split("|")[0].strip().lower()
-        if pitch_to_family.get(pitch, "other") == family:
+        if get_pitch_family(event["pitch"]) == family:
             count += 1
+
     return count
 
 
@@ -82,8 +63,8 @@ def pitch_score(pitch_name: str, history) -> int:
     family = get_pitch_family(pitch_name)
 
     rank_bonus_map = {
-        1: 55,
-        2: 30,
+        1: 58,
+        2: 32,
         3: 12,
         4: 0,
         5: -10,
@@ -93,24 +74,32 @@ def pitch_score(pitch_name: str, history) -> int:
 
     score = confidence + rank_bonus
 
+    # Same pitch balls in a row = big problem
     same_pitch_balls = consecutive_balls_for_pitch(pitch_name, history)
     if same_pitch_balls == 1:
         score -= 55
     elif same_pitch_balls == 2:
-        score -= 110
+        score -= 115
     elif same_pitch_balls >= 3:
-        score -= 170
+        score -= 180
 
+    # Same pitch repeated in sequence
     consecutive_usage = consecutive_usage_for_pitch(pitch_name, history)
     if consecutive_usage == 1:
-        score -= 8
+        score -= 10
     elif consecutive_usage == 2:
-        score -= 26
+        score -= 32
     elif consecutive_usage >= 3:
-        score -= 55
+        score -= 65
 
+    # General recent usage
     usage_count = recent_usage_count(pitch_name, history, window=5)
-    score -= usage_count * 15
+    if usage_count == 1:
+        score -= 12
+    elif usage_count == 2:
+        score -= 28
+    elif usage_count >= 3:
+        score -= 45
 
     last_event = last_pitch_event(history)
     if last_event:
@@ -127,18 +116,24 @@ def pitch_score(pitch_name: str, history) -> int:
                 else:
                     score -= 150
             else:
-                score -= 18
+                score -= 24
+
+    # Family overuse penalties
+    hard_count = recent_family_count("hard", history, window=5)
+    breaking_count = recent_family_count("breaking", history, window=5)
+    offspeed_count = recent_family_count("offspeed", history, window=5)
 
     if family == "hard":
-        score -= recent_family_count("hard", history, window=5) * 10
+        score -= hard_count * 12
     elif family == "breaking":
-        score -= recent_family_count("breaking", history, window=5) * 5
+        score -= breaking_count * 6
     elif family == "offspeed":
-        score -= recent_family_count("offspeed", history, window=5) * 4
+        score -= offspeed_count * 5
 
+    # Extra anti-hard spam
     if name in {"4-seam", "2-seam", "cutter"}:
         hard_recent = recent_hard_pitch_count(history, window=5)
-        score -= hard_recent * 10
+        score -= hard_recent * 12
 
     return score
 
