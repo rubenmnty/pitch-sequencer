@@ -5,18 +5,13 @@ from pitch_history import (
     last_pitch_event,
     get_last_ball_quality,
 )
-from pitch_scoring import best_available, pitch_score
+from pitch_scoring import pitch_score, get_pitch_rank
 from pitch_locations import next_location_for_pitch
 
 
 def get_pitch_confidence_score(name: str) -> int:
     profile = st.session_state.pitch_profiles.get(name, {})
     return int(profile.get("confidence_score", 50))
-
-
-def get_pitch_rank(name: str) -> int:
-    profile = st.session_state.pitch_profiles.get(name, {})
-    return int(profile.get("rank", 99))
 
 
 def confidence_note(pitch_name: str):
@@ -115,12 +110,18 @@ def get_at_bat_phase(history) -> str:
     return "finish"
 
 
+def available_pitches(candidates):
+    return [p for p in candidates if p in st.session_state.pitcher_pitches]
+
+
 def choose_by_mode(candidates, history, mode: str, phase: str):
+    candidates = available_pitches(candidates)
     if not candidates:
         return None
 
     family_counts = recent_family_counts(history, window=5)
     intent_counts = recent_intent_counts(history, window=4)
+
     last_event = last_pitch_event(history)
     last_pitch = last_event["pitch"].strip().lower() if last_event else None
     last_family = pitch_family(last_pitch) if last_pitch else None
@@ -134,7 +135,6 @@ def choose_by_mode(candidates, history, mode: str, phase: str):
         intent = pitch_intent(pitch)
         score = pitch_score(pitch, history)
 
-        # mix penalties
         if family == "hard":
             score -= family_counts["hard"] * 8
         elif family == "breaking":
@@ -142,18 +142,14 @@ def choose_by_mode(candidates, history, mode: str, phase: str):
         elif family == "offspeed":
             score -= family_counts["offspeed"] * 4
 
-        # same intent penalty
         score -= intent_counts.get(intent, 0) * 5
 
-        # avoid same family back-to-back too often
         if last_family and family == last_family:
             score -= 12
 
-        # avoid same intent back-to-back too often
         if last_intent and intent == last_intent:
             score -= 10
 
-        # MODE
         if mode == "opener":
             if intent == "steal":
                 score += 15
@@ -208,7 +204,6 @@ def choose_by_mode(candidates, history, mode: str, phase: str):
             if intent == "compete":
                 score += 4
 
-        # PHASE
         if phase == "opening":
             if intent == "steal":
                 score += 12
@@ -250,12 +245,10 @@ def baseball_recommend_pitch(batter, balls, strikes, history):
     last_pitch = last_event["pitch"].strip().lower() if last_event else None
     last_location = last_event["location"].strip().lower() if last_event else ""
 
-    # FIRST PITCH / OPENER
     if balls == 0 and strikes == 0 and first_pitch_of_ab:
         if use_default and slot_num == 4 and "Fastball hunter" in tendencies:
-            candidates = [
-                p
-                for p in [
+            pitch_name = choose_by_mode(
+                [
                     "curveball",
                     "changeup",
                     "cutter",
@@ -264,21 +257,21 @@ def baseball_recommend_pitch(batter, balls, strikes, history):
                     "splitter",
                     "sweeper",
                     "4-seam",
-                ]
-                if p in st.session_state.pitcher_pitches
-            ]
-            pitch_name = choose_by_mode(candidates, history, "opener", "opening")
+                ],
+                history,
+                "opener",
+                "opening",
+            )
             return (
                 pitch_name,
                 next_location_for_pitch(pitch_name, handedness, history),
-                "Cleanup hitter opener: avoid giving a clean first-pitch heater."
+                "Cleanup hitter opener: avoid a clean first-pitch heater."
                 + confidence_note(pitch_name),
             )
 
         if "Aggressive first pitch" in tendencies and "Fastball hunter" in tendencies:
-            candidates = [
-                p
-                for p in [
+            pitch_name = choose_by_mode(
+                [
                     "curveball",
                     "changeup",
                     "cutter",
@@ -287,10 +280,11 @@ def baseball_recommend_pitch(batter, balls, strikes, history):
                     "splitter",
                     "sweeper",
                     "4-seam",
-                ]
-                if p in st.session_state.pitcher_pitches
-            ]
-            pitch_name = choose_by_mode(candidates, history, "opener", "opening")
+                ],
+                history,
+                "opener",
+                "opening",
+            )
             return (
                 pitch_name,
                 next_location_for_pitch(pitch_name, handedness, history),
@@ -298,12 +292,8 @@ def baseball_recommend_pitch(batter, balls, strikes, history):
                 + confidence_note(pitch_name),
             )
 
-        candidates = [
-            p
-            for p in ["cutter", "2-seam", "curveball", "changeup", "4-seam"]
-            if p in st.session_state.pitcher_pitches
-        ]
-        if not candidates:
+        candidates = ["cutter", "2-seam", "curveball", "changeup", "4-seam"]
+        if not available_pitches(candidates):
             candidates = st.session_state.pitcher_pitches
 
         pitch_name = choose_by_mode(candidates, history, "opener", "opening")
@@ -314,7 +304,6 @@ def baseball_recommend_pitch(batter, balls, strikes, history):
             + confidence_note(pitch_name),
         )
 
-    # TWO STRIKES
     if strikes == 2:
         if "Chases high fastball" in tendencies and "4-seam" in st.session_state.pitcher_pitches:
             return (
@@ -324,11 +313,12 @@ def baseball_recommend_pitch(batter, balls, strikes, history):
             )
 
         if "Chases splitter down" in tendencies:
-            candidates = [
-                p for p in ["splitter", "changeup", "curveball"]
-                if p in st.session_state.pitcher_pitches
-            ]
-            pitch_name = choose_by_mode(candidates, history, "putaway", "finish")
+            pitch_name = choose_by_mode(
+                ["splitter", "changeup", "curveball"],
+                history,
+                "putaway",
+                "finish",
+            )
             if pitch_name:
                 return (
                     pitch_name,
@@ -337,10 +327,12 @@ def baseball_recommend_pitch(batter, balls, strikes, history):
                 )
 
         if "Chases sweeper away" in tendencies:
-            candidates = [
-                p for p in ["sweeper", "slider"] if p in st.session_state.pitcher_pitches
-            ]
-            pitch_name = choose_by_mode(candidates, history, "putaway", "finish")
+            pitch_name = choose_by_mode(
+                ["sweeper", "slider"],
+                history,
+                "putaway",
+                "finish",
+            )
             if pitch_name:
                 return (
                     pitch_name,
@@ -348,13 +340,19 @@ def baseball_recommend_pitch(batter, balls, strikes, history):
                     "Two strikes: hitter chases away." + confidence_note(pitch_name),
                 )
 
-        candidates = [
-            p for p in ["slider", "sweeper", "splitter", "curveball", "changeup"]
-            if p in st.session_state.pitcher_pitches
-        ]
-        pitch_name = choose_by_mode(candidates, history, mode, phase)
+        pitch_name = choose_by_mode(
+            ["slider", "sweeper", "splitter", "curveball", "changeup"],
+            history,
+            mode,
+            phase,
+        )
         if pitch_name is None:
-            pitch_name = choose_by_mode(st.session_state.pitcher_pitches, history, mode, phase)
+            pitch_name = choose_by_mode(
+                st.session_state.pitcher_pitches,
+                history,
+                mode,
+                phase,
+            )
 
         return (
             pitch_name,
@@ -362,16 +360,20 @@ def baseball_recommend_pitch(batter, balls, strikes, history):
             "Two-strike finish pitch." + confidence_note(pitch_name),
         )
 
-    # HITTER COUNT
     if balls > strikes:
-        candidates = [
-            p
-            for p in ["cutter", "2-seam", "changeup", "curveball", "4-seam", "splitter"]
-            if p in st.session_state.pitcher_pitches
-        ]
-        pitch_name = choose_by_mode(candidates, history, mode, phase)
+        pitch_name = choose_by_mode(
+            ["cutter", "2-seam", "changeup", "curveball", "4-seam", "splitter"],
+            history,
+            mode,
+            phase,
+        )
         if pitch_name is None:
-            pitch_name = choose_by_mode(st.session_state.pitcher_pitches, history, mode, phase)
+            pitch_name = choose_by_mode(
+                st.session_state.pitcher_pitches,
+                history,
+                mode,
+                phase,
+            )
 
         return (
             pitch_name,
@@ -382,15 +384,20 @@ def baseball_recommend_pitch(batter, balls, strikes, history):
             + confidence_note(pitch_name),
         )
 
-    # SEQUENCE / PLAN LOGIC
     if last_pitch == "4-seam" and "up" in last_location:
-        candidates = [
-            p for p in ["splitter", "changeup", "curveball", "slider"]
-            if p in st.session_state.pitcher_pitches
-        ]
-        pitch_name = choose_by_mode(candidates, history, "expand", "middle")
+        pitch_name = choose_by_mode(
+            ["splitter", "changeup", "curveball", "slider"],
+            history,
+            "expand",
+            "middle",
+        )
         if pitch_name is None:
-            pitch_name = choose_by_mode(st.session_state.pitcher_pitches, history, "expand", "middle")
+            pitch_name = choose_by_mode(
+                st.session_state.pitcher_pitches,
+                history,
+                "expand",
+                "middle",
+            )
         return (
             pitch_name,
             next_location_for_pitch(pitch_name, handedness, history),
@@ -399,16 +406,18 @@ def baseball_recommend_pitch(batter, balls, strikes, history):
         )
 
     if last_pitch in {"4-seam", "2-seam", "cutter"}:
-        candidates = [
-            p for p in ["curveball", "splitter", "slider", "changeup", "sweeper"]
-            if p in st.session_state.pitcher_pitches
-        ]
-        if not candidates:
+        candidates = ["curveball", "splitter", "slider", "changeup", "sweeper"]
+        if not available_pitches(candidates):
             candidates = [p for p in st.session_state.pitcher_pitches if p != last_pitch]
 
         pitch_name = choose_by_mode(candidates, history, "neutral", "middle")
         if pitch_name is None:
-            pitch_name = choose_by_mode(st.session_state.pitcher_pitches, history, "neutral", "middle")
+            pitch_name = choose_by_mode(
+                st.session_state.pitcher_pitches,
+                history,
+                "neutral",
+                "middle",
+            )
 
         return (
             pitch_name,
@@ -418,13 +427,19 @@ def baseball_recommend_pitch(batter, balls, strikes, history):
         )
 
     if last_pitch in {"slider", "sweeper", "curveball"}:
-        candidates = [
-            p for p in ["4-seam", "2-seam", "changeup", "splitter", "cutter"]
-            if p in st.session_state.pitcher_pitches
-        ]
-        pitch_name = choose_by_mode(candidates, history, "balance", "middle")
+        pitch_name = choose_by_mode(
+            ["4-seam", "2-seam", "changeup", "splitter", "cutter"],
+            history,
+            "balance",
+            "middle",
+        )
         if pitch_name is None:
-            pitch_name = choose_by_mode(st.session_state.pitcher_pitches, history, "balance", "middle")
+            pitch_name = choose_by_mode(
+                st.session_state.pitcher_pitches,
+                history,
+                "balance",
+                "middle",
+            )
 
         return (
             pitch_name,
@@ -434,13 +449,19 @@ def baseball_recommend_pitch(batter, balls, strikes, history):
         )
 
     if last_pitch in {"splitter", "changeup"}:
-        candidates = [
-            p for p in ["4-seam", "cutter", "curveball", "2-seam"]
-            if p in st.session_state.pitcher_pitches
-        ]
-        pitch_name = choose_by_mode(candidates, history, "balance", "middle")
+        pitch_name = choose_by_mode(
+            ["4-seam", "cutter", "curveball", "2-seam"],
+            history,
+            "balance",
+            "middle",
+        )
         if pitch_name is None:
-            pitch_name = choose_by_mode(st.session_state.pitcher_pitches, history, "balance", "middle")
+            pitch_name = choose_by_mode(
+                st.session_state.pitcher_pitches,
+                history,
+                "balance",
+                "middle",
+            )
 
         return (
             pitch_name,
@@ -449,7 +470,12 @@ def baseball_recommend_pitch(batter, balls, strikes, history):
             + confidence_note(pitch_name),
         )
 
-    pitch_name = choose_by_mode(st.session_state.pitcher_pitches, history, mode, phase)
+    pitch_name = choose_by_mode(
+        st.session_state.pitcher_pitches,
+        history,
+        mode,
+        phase,
+    )
     return (
         pitch_name,
         next_location_for_pitch(pitch_name, handedness, history),
@@ -473,11 +499,12 @@ def softball_recommend_pitch(batter, balls, strikes, history):
 
     if balls == 0 and strikes == 0 and first_pitch_of_ab:
         if use_default and slot_num == 4:
-            candidates = [
-                p for p in ["curve", "screw", "drop curve", "change", "rise", "drop"]
-                if p in st.session_state.pitcher_pitches
-            ]
-            pitch_name = choose_by_mode(candidates, history, "opener", "opening")
+            pitch_name = choose_by_mode(
+                ["curve", "screw", "drop curve", "change", "rise", "drop"],
+                history,
+                "opener",
+                "opening",
+            )
             return (
                 pitch_name,
                 next_location_for_pitch(pitch_name, handedness, history),
@@ -486,11 +513,12 @@ def softball_recommend_pitch(batter, balls, strikes, history):
             )
 
         if "Aggressive first pitch" in tendencies and "Fastball hunter" in tendencies:
-            candidates = [
-                p for p in ["curve", "screw", "drop curve", "change", "rise", "drop"]
-                if p in st.session_state.pitcher_pitches
-            ]
-            pitch_name = choose_by_mode(candidates, history, "opener", "opening")
+            pitch_name = choose_by_mode(
+                ["curve", "screw", "drop curve", "change", "rise", "drop"],
+                history,
+                "opener",
+                "opening",
+            )
             return (
                 pitch_name,
                 next_location_for_pitch(pitch_name, handedness, history),
@@ -498,11 +526,8 @@ def softball_recommend_pitch(batter, balls, strikes, history):
                 + confidence_note(pitch_name),
             )
 
-        candidates = [
-            p for p in ["drop", "curve", "change", "rise", "screw", "drop curve"]
-            if p in st.session_state.pitcher_pitches
-        ]
-        if not candidates:
+        candidates = ["drop", "curve", "change", "rise", "screw", "drop curve"]
+        if not available_pitches(candidates):
             candidates = st.session_state.pitcher_pitches
 
         pitch_name = choose_by_mode(candidates, history, "opener", "opening")
@@ -514,13 +539,19 @@ def softball_recommend_pitch(batter, balls, strikes, history):
         )
 
     if strikes == 2:
-        candidates = [
-            p for p in ["drop curve", "drop", "curve", "screw", "change", "rise"]
-            if p in st.session_state.pitcher_pitches
-        ]
-        pitch_name = choose_by_mode(candidates, history, "putaway", "finish")
+        pitch_name = choose_by_mode(
+            ["drop curve", "drop", "curve", "screw", "change", "rise"],
+            history,
+            "putaway",
+            "finish",
+        )
         if pitch_name is None:
-            pitch_name = choose_by_mode(st.session_state.pitcher_pitches, history, "putaway", "finish")
+            pitch_name = choose_by_mode(
+                st.session_state.pitcher_pitches,
+                history,
+                "putaway",
+                "finish",
+            )
 
         return (
             pitch_name,
@@ -529,13 +560,19 @@ def softball_recommend_pitch(batter, balls, strikes, history):
         )
 
     if balls > strikes:
-        candidates = [
-            p for p in ["drop", "curve", "screw", "rise", "change"]
-            if p in st.session_state.pitcher_pitches
-        ]
-        pitch_name = choose_by_mode(candidates, history, "behind", "middle")
+        pitch_name = choose_by_mode(
+            ["drop", "curve", "screw", "rise", "change"],
+            history,
+            "behind",
+            "middle",
+        )
         if pitch_name is None:
-            pitch_name = choose_by_mode(st.session_state.pitcher_pitches, history, "behind", "middle")
+            pitch_name = choose_by_mode(
+                st.session_state.pitcher_pitches,
+                history,
+                "behind",
+                "middle",
+            )
 
         return (
             pitch_name,
@@ -546,14 +583,20 @@ def softball_recommend_pitch(batter, balls, strikes, history):
             + confidence_note(pitch_name),
         )
 
-    if last_pitch in {"rise"}:
-        candidates = [
-            p for p in ["drop", "drop curve", "change"]
-            if p in st.session_state.pitcher_pitches
-        ]
-        pitch_name = choose_by_mode(candidates, history, "neutral", "middle")
+    if last_pitch == "rise":
+        pitch_name = choose_by_mode(
+            ["drop", "drop curve", "change"],
+            history,
+            "neutral",
+            "middle",
+        )
         if pitch_name is None:
-            pitch_name = choose_by_mode(st.session_state.pitcher_pitches, history, "neutral", "middle")
+            pitch_name = choose_by_mode(
+                st.session_state.pitcher_pitches,
+                history,
+                "neutral",
+                "middle",
+            )
 
         return (
             pitch_name,
@@ -565,7 +608,12 @@ def softball_recommend_pitch(batter, balls, strikes, history):
         candidates = [p for p in st.session_state.pitcher_pitches if p != last_pitch]
         pitch_name = choose_by_mode(candidates, history, "balance", "middle")
         if pitch_name is None:
-            pitch_name = choose_by_mode(st.session_state.pitcher_pitches, history, "balance", "middle")
+            pitch_name = choose_by_mode(
+                st.session_state.pitcher_pitches,
+                history,
+                "balance",
+                "middle",
+            )
 
         return (
             pitch_name,
@@ -574,7 +622,12 @@ def softball_recommend_pitch(batter, balls, strikes, history):
             + confidence_note(pitch_name),
         )
 
-    pitch_name = choose_by_mode(st.session_state.pitcher_pitches, history, mode, phase)
+    pitch_name = choose_by_mode(
+        st.session_state.pitcher_pitches,
+        history,
+        mode,
+        phase,
+    )
     return (
         pitch_name,
         next_location_for_pitch(pitch_name, handedness, history),
@@ -661,4 +714,3 @@ def recommend_pitch(batter, balls, strikes, history):
     )
 
     return pitch_name, location, reason
-Edit it
