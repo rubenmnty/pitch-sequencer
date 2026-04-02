@@ -24,14 +24,67 @@ def get_pitch_rank(name: str) -> int:
     return int(profile.get("rank", 99))
 
 
+def get_pitch_family(name: str) -> str:
+    pitch = name.strip().lower()
+
+    if pitch in {"4-seam", "2-seam", "cutter", "rise"}:
+        return "hard"
+    if pitch in {
+        "curveball",
+        "slider",
+        "sweeper",
+        "curve",
+        "screw",
+        "drop curve",
+        "drop",
+    }:
+        return "breaking"
+    if pitch in {"changeup", "splitter", "change"}:
+        return "offspeed"
+    return "other"
+
+
+def recent_family_count(family: str, history, window: int = 5) -> int:
+    pitch_to_family = {
+        "4-seam": "hard",
+        "2-seam": "hard",
+        "cutter": "hard",
+        "rise": "hard",
+        "curveball": "breaking",
+        "slider": "breaking",
+        "sweeper": "breaking",
+        "curve": "breaking",
+        "screw": "breaking",
+        "drop curve": "breaking",
+        "drop": "breaking",
+        "changeup": "offspeed",
+        "splitter": "offspeed",
+        "change": "offspeed",
+    }
+
+    events = [
+        item for item in st.session_state.ab_history
+        if " | " in item and not item.startswith("Ball Quality |")
+    ][-window:]
+
+    count = 0
+    for event in events:
+        pitch = event.split("|")[0].strip().lower()
+        if pitch_to_family.get(pitch, "other") == family:
+            count += 1
+    return count
+
+
 def pitch_score(pitch_name: str, history) -> int:
     confidence = get_pitch_confidence_score(pitch_name)
     rank = get_pitch_rank(pitch_name)
+    name = pitch_name.strip().lower()
+    family = get_pitch_family(pitch_name)
 
     rank_bonus_map = {
-        1: 50,
-        2: 28,
-        3: 10,
+        1: 55,
+        2: 30,
+        3: 12,
         4: 0,
         5: -10,
         6: -18,
@@ -39,26 +92,25 @@ def pitch_score(pitch_name: str, history) -> int:
     rank_bonus = rank_bonus_map.get(rank, -24)
 
     score = confidence + rank_bonus
-    name = pitch_name.strip().lower()
 
     same_pitch_balls = consecutive_balls_for_pitch(pitch_name, history)
     if same_pitch_balls == 1:
-        score -= 50
+        score -= 55
     elif same_pitch_balls == 2:
-        score -= 100
+        score -= 110
     elif same_pitch_balls >= 3:
-        score -= 160
+        score -= 170
 
     consecutive_usage = consecutive_usage_for_pitch(pitch_name, history)
     if consecutive_usage == 1:
-        score -= 10
+        score -= 8
     elif consecutive_usage == 2:
-        score -= 30
+        score -= 26
     elif consecutive_usage >= 3:
-        score -= 60
+        score -= 55
 
     usage_count = recent_usage_count(pitch_name, history, window=5)
-    score -= usage_count * 18
+    score -= usage_count * 15
 
     last_event = last_pitch_event(history)
     if last_event:
@@ -69,17 +121,24 @@ def pitch_score(pitch_name: str, history) -> int:
         if last_pitch == name:
             if last_outcome == "ball":
                 if last_quality == "Uncompetitive":
-                    score -= 240
+                    score -= 260
                 elif last_quality == "Competitive":
-                    score -= 90
+                    score -= 95
                 else:
-                    score -= 140
+                    score -= 150
             else:
-                score -= 20
+                score -= 18
+
+    if family == "hard":
+        score -= recent_family_count("hard", history, window=5) * 10
+    elif family == "breaking":
+        score -= recent_family_count("breaking", history, window=5) * 5
+    elif family == "offspeed":
+        score -= recent_family_count("offspeed", history, window=5) * 4
 
     if name in {"4-seam", "2-seam", "cutter"}:
         hard_recent = recent_hard_pitch_count(history, window=5)
-        score -= hard_recent * 8
+        score -= hard_recent * 10
 
     return score
 
